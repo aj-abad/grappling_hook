@@ -1,6 +1,7 @@
 package com.ajabad.grapplinghook.item;
 
 import com.ajabad.grapplinghook.Reference;
+import com.ajabad.grapplinghook.entity.EntityGrapplingHook;
 
 import cpw.mods.fml.relauncher.Side;
 import cpw.mods.fml.relauncher.SideOnly;
@@ -50,13 +51,20 @@ public class ItemGrapplingHook extends Item
     @Override
     public ItemStack onItemRightClick(ItemStack stack, World world, EntityPlayer player)
     {
-        // Vanilla egg/snowball throw sound (see ItemEgg#onItemRightClick).
-        world.playSoundAtEntity(player, "random.bow", 0.5F,
-                0.4F / (itemRand.nextFloat() * 0.4F + 0.8F));
-
-        // Swap the icon from primed to fired once the hook is launched.
+        // Only a primed hook fires. A fired hook's right-click is consumed here so
+        // it can't re-fire; the continuous "hold to reel" action is read client-side
+        // from the use key (see GrappleController), not from this once-per-press hook.
         if (stack.getItemDamage() == META_PRIMED)
         {
+            // Vanilla bow-release sound, randomized like an egg/snowball throw.
+            world.playSoundAtEntity(player, "random.bow", 0.5F,
+                    0.4F / (itemRand.nextFloat() * 0.4F + 0.8F));
+
+            if (!world.isRemote)
+            {
+                world.spawnEntityInWorld(new EntityGrapplingHook(world, player));
+            }
+
             stack.setItemDamage(META_FIRED);
         }
 

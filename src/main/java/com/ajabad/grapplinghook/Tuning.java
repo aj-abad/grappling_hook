@@ -1,0 +1,72 @@
+package com.ajabad.grapplinghook;
+
+/**
+ * Central home for every tweakable grappling-hook constant. Kept in one place so
+ * the feel can be tuned in-game without hunting through the physics code.
+ *
+ * <p>Units are Minecraft's: distances in blocks, speeds in blocks/tick (20 t/s).
+ */
+public final class Tuning
+{
+    // --- Flight (mirrors a fully-charged bow arrow) -------------------------
+    /** Launch speed of the fired hook. Full-charge bow == 2.0 * 1.5 == 3.0. */
+    public static final double LAUNCH_SPEED = 3.0D;
+    /** Per-tick gravity applied to the hook in flight (vanilla arrow == 0.05). */
+    public static final double ARROW_GRAVITY = 0.05D;
+    /** Per-tick horizontal/vertical drag in flight (vanilla arrow == 0.99). */
+    public static final double AIR_DRAG = 0.99D;
+    /** Hard cap on flight time before a never-hit shot self-destructs. */
+    public static final int MAX_FLIGHT_TICKS = 200;
+    /** Backstop teardown distance (squared) between owner and hook. */
+    public static final double MAX_RANGE_SQ = 256.0D * 256.0D;
+
+    // --- Tether / cable -----------------------------------------------------
+    /** Slack added to the measured hit distance when the cable forms. */
+    public static final double LEEWAY = 1.0D;
+    /** Smallest the active (player-side) segment may be reeled to. */
+    public static final double MIN_ACTIVE_LENGTH = 1.0D;
+
+    // --- Swing --------------------------------------------------------------
+    /** Tangential acceleration WASD adds to a swing each tick. */
+    public static final double SWING_ACCEL = 0.03D;
+
+    // --- Reel-in (hold use key) ---------------------------------------------
+    /** Blocks/tick the cable shortens while reeling. */
+    public static final double REEL_SPEED = 0.15D;
+    /** Extra inward pull velocity applied while reeling. */
+    public static final double REEL_PULL = 0.18D;
+
+    // --- Yank (left-click while stuck) --------------------------------------
+    /** Yank speed per block of cable length (force grows with the cable). */
+    public static final double YANK_K = 0.12D;
+    /** Upper bound on yank speed regardless of cable length. */
+    public static final double YANK_MAX_SPEED = 4.0D;
+    /** How long (ticks) after a yank the jump-launch remains available. */
+    public static final int YANK_FLIGHT_TICKS = 40;
+
+    // --- Retract (left-click while flying) ----------------------------------
+    /** Blocks/tick the hook flies back toward the hand. */
+    public static final double RETRACT_SPEED = 2.5D;
+    /** Distance at which a retracting hook is caught and removed. */
+    public static final double RETRACT_CATCH_DIST = 1.5D;
+
+    // --- Jump release -------------------------------------------------------
+    /** Horizontal momentum added along the swing direction on release. */
+    public static final double JUMP_BOOST = 0.4D;
+    /** Upward momentum added on release (~vanilla jump velocity). */
+    public static final double JUMP_UP = 0.42D;
+
+    // --- Rendering ----------------------------------------------------------
+    /** Half-thickness of the drawn cord, in blocks. */
+    public static final float CORD_WIDTH = 0.05F;
+    /** Sub-segments each cord span is split into, for the drooping curve. */
+    public static final int CORD_SUBDIVISIONS = 8;
+    /** Multiplier on the slack-derived droop of the anchored active span. */
+    public static final double CORD_SAG_SCALE = 1.0D;
+    /** Droop of the in-flight cord as a fraction of its length (a loose throw). */
+    public static final double CORD_FLIGHT_SAG = 0.06D;
+    /** Maximum droop depth in blocks, so long/slack spans don't sag absurdly. */
+    public static final double CORD_SAG_MAX = 2.5D;
+
+    private Tuning() {}
+}
