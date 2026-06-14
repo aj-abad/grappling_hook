@@ -1,0 +1,13 @@
+[
+  {
+    "modid": "grapplinghook",
+    "name": "Grappling Hook Mod",
+    "description": "A Minecraft Forge 1.7.10 mod.",
+    "version": "${version}",
+    "mcversion": "${mcversion}",
+    "url": "",
+    "credits": "",
+    "authorList": ["aj_abad"],
+    "dependencies": []
+  }
+]

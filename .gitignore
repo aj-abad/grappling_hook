@@ -1,0 +1,14 @@
+# ForgeGradle / Gradle 1.7.10 workspace
+/.gradle/
+/build/
+/run/
+/eclipse/
+/out/
+
+# IDE
+.idea/
+*.iml
+.settings/
+bin/
+
+.DS_Store

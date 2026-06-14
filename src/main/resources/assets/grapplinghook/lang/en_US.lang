@@ -1,0 +1,5 @@
+# Localization for the Grappling Hook mod (assets/grapplinghook/lang/en_US.lang).
+# Add entries as you register content, e.g.:
+#   item.my_item.name=My Item
+#   key.categories.grapplinghook=Grappling Hook
+#   key.grapplinghook.fire=Fire Grapple
