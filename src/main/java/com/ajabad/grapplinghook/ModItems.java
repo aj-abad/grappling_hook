@@ -1,5 +1,11 @@
 package com.ajabad.grapplinghook;
 
+import com.ajabad.grapplinghook.item.ItemGrapplingHook;
+
+import cpw.mods.fml.common.registry.GameRegistry;
+
+import net.minecraft.item.Item;
+
 /**
  * Item registration + crafting recipes. Invoked from
  * {@link com.ajabad.grapplinghook.proxy.CommonProxy#preInit}. Register items
@@ -7,12 +13,12 @@ package com.ajabad.grapplinghook;
  */
 public final class ModItems
 {
+    public static Item grapplingHook;
+
     public static void register()
     {
-        // No items yet. Example:
-        //   Item myItem = new Item().setUnlocalizedName("my_item")
-        //       .setTextureName(Reference.MODID + ":my_item");
-        //   GameRegistry.registerItem(myItem, "my_item");
+        grapplingHook = new ItemGrapplingHook();
+        GameRegistry.registerItem(grapplingHook, "grappling_hook");
     }
 
     private ModItems() {}

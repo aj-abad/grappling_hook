@@ -3,3 +3,5 @@
 #   item.my_item.name=My Item
 #   key.categories.grapplinghook=Grappling Hook
 #   key.grapplinghook.fire=Fire Grapple
+
+item.grappling_hook.name=Grappling Hook
