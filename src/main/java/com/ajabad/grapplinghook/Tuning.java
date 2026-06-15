@@ -59,6 +59,8 @@ public final class Tuning
     public static final double RETRACT_SPEED = 2.5D;
     /** Distance at which a retracting hook is caught and removed. */
     public static final double RETRACT_CATCH_DIST = 1.5D;
+    /** Time (ticks, 20/s) over which a retracting cord eases from drooped to taut. */
+    public static final double RETRACT_TAUT_TICKS = 6.0D;
 
     // --- Jump release -------------------------------------------------------
     /** Horizontal momentum added along the swing direction on release. */
@@ -96,6 +98,9 @@ public final class Tuning
     // --- Rendering ----------------------------------------------------------
     /** Half-thickness of the drawn cord, in blocks. */
     public static final float CORD_WIDTH = 0.05F;
+    /** Cord strand colours, matching the vanilla lead/leash (RenderLiving). */
+    public static final int CORD_COLOR_LIGHT = 0x7F664C; // lead's (0.5, 0.4, 0.3)
+    public static final int CORD_COLOR_DARK  = 0x594735; // lead's (0.35, 0.28, 0.21)
     /** Sub-segments each cord span is split into, for the drooping curve. */
     public static final int CORD_SUBDIVISIONS = 16;
     /** Multiplier on the slack-derived droop of the anchored active span. */

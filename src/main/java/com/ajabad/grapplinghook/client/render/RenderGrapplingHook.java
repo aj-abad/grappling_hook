@@ -139,20 +139,31 @@ public class RenderGrapplingHook extends Render
         }
 
         // Subdivide each span and droop it: the anchored active span sags by its
-        // slack (taut => straight line), an in-flight cord gets a small loose droop.
+        // slack (taut => straight line), an in-flight cord gets a small loose droop,
+        // and a retracting hook eases that droop out so its cord pulls taut as it reels.
         boolean tethered = pivots != null && !pivots.isEmpty();
+        double droopScale = retractDroopScale(hook, partial);
         double offX = eiwX - x, offY = eiwY - y, offZ = eiwZ - z;
-        List<double[]> curve = saggedCurve(pts, tethered, hook.renderSlack, owner.worldObj, offX, offY, offZ);
+        List<double[]> curve = saggedCurve(pts, tethered, droopScale, hook.renderSlack, owner.worldObj, offX, offY, offZ);
 
+        // Light each cord point from the world at its own position rather than
+        // letting it inherit the hook entity's render brightness: when the hook is
+        // buried in a block that brightness is 0, which would render the whole cord
+        // black. Colour alternates per segment between two browns, matching the
+        // vanilla lead/leash strands.
+        World world = owner.worldObj;
         Tessellator t = Tessellator.instance;
         GL11.glDisable(GL11.GL_TEXTURE_2D);
         GL11.glDisable(GL11.GL_LIGHTING);
         GL11.glDisable(GL11.GL_CULL_FACE); // the cord is a two-quad tube, visible from any side
         t.startDrawingQuads();
-        t.setColorOpaque_I(0x46361F); // dark rope brown
+        int briA = cordBrightness(world, curve.get(0), offX, offY, offZ);
         for (int i = 0; i + 1 < curve.size(); ++i)
         {
-            drawThickSegment(t, curve.get(i), curve.get(i + 1), Tuning.CORD_WIDTH);
+            int briB = cordBrightness(world, curve.get(i + 1), offX, offY, offZ);
+            int color = (i % 2 == 0) ? Tuning.CORD_COLOR_LIGHT : Tuning.CORD_COLOR_DARK;
+            drawThickSegment(t, curve.get(i), curve.get(i + 1), Tuning.CORD_WIDTH, color, briA, briB);
+            briA = briB;
         }
         t.draw();
         GL11.glEnable(GL11.GL_CULL_FACE);
@@ -161,7 +172,7 @@ public class RenderGrapplingHook extends Render
     }
 
     /** Expand the coarse pivot points into a finer, drooping polyline. */
-    private List<double[]> saggedCurve(double[][] pts, boolean tethered, double slack,
+    private List<double[]> saggedCurve(double[][] pts, boolean tethered, double droopScale, double slack,
             World world, double offX, double offY, double offZ)
     {
         List<double[]> curve = new ArrayList<double[]>();
@@ -171,7 +182,7 @@ public class RenderGrapplingHook extends Render
             double[] b = pts[i + 1];
             double dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
             double len = Math.sqrt(dx * dx + dy * dy + dz * dz);
-            double sag = spanSag(tethered, i, len, slack);
+            double sag = spanSag(tethered, droopScale, i, len, slack);
             for (int k = 0; k < Tuning.CORD_SUBDIVISIONS; ++k)
             {
                 double s = (double) k / Tuning.CORD_SUBDIVISIONS;
@@ -206,7 +217,7 @@ public class RenderGrapplingHook extends Render
     }
 
     /** Droop depth for one span. */
-    private double spanSag(boolean tethered, int spanIndex, double len, double slack)
+    private double spanSag(boolean tethered, double droopScale, int spanIndex, double len, double slack)
     {
         if (tethered)
         {
@@ -217,12 +228,33 @@ public class RenderGrapplingHook extends Render
             double h = Math.sqrt(3.0D * len * slack / 8.0D) * Tuning.CORD_SAG_SCALE;
             return Math.min(Tuning.CORD_SAG_MAX, h);
         }
-        // In-flight or remote cord: a small, loose droop.
-        return Math.min(Tuning.CORD_SAG_MAX, len * Tuning.CORD_FLIGHT_SAG);
+        // In-flight or remote cord: a small, loose droop. While retracting, droopScale
+        // eases from 1 to 0 so the cord pulls taut over a fraction of a second.
+        return Math.min(Tuning.CORD_SAG_MAX, len * Tuning.CORD_FLIGHT_SAG) * droopScale;
     }
 
-    /** A thick segment drawn as two perpendicular quads (a square-ish tube). */
-    private void drawThickSegment(Tessellator t, double[] a, double[] b, float halfWidth)
+    /**
+     * Cord droop multiplier: 1.0 normally, easing 1 -> 0 over the first
+     * {@link Tuning#RETRACT_TAUT_TICKS} ticks of retracting so the cord pulls taut
+     * smoothly. {@code partial} interpolates within the tick for frame-smooth motion.
+     */
+    private double retractDroopScale(EntityGrapplingHook hook, float partial)
+    {
+        if (hook.getState() != EntityGrapplingHook.STATE_RETRACTING) return 1.0D;
+        double t = (hook.retractTicks + partial) / Tuning.RETRACT_TAUT_TICKS;
+        if (t <= 0.0D) return 1.0D;
+        if (t >= 1.0D) return 0.0D;
+        double k = t * t * (3.0D - 2.0D * t); // smoothstep: gentle ease in and out
+        return 1.0D - k;
+    }
+
+    /**
+     * A thick segment drawn as two perpendicular quads (a square-ish tube). The
+     * segment is one solid {@code color}; brightness is interpolated from {@code briA}
+     * at end {@code a} to {@code briB} at end {@code b} so the cord shades with the world.
+     */
+    private void drawThickSegment(Tessellator t, double[] a, double[] b, float halfWidth,
+            int color, int briA, int briB)
     {
         double dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
         double len = Math.sqrt(dx * dx + dy * dy + dz * dz);
@@ -243,16 +275,36 @@ public class RenderGrapplingHook extends Render
         double n2y = dz * n1x - dx * n1z;
         double n2z = dx * n1y - dy * n1x;
 
-        addQuad(t, a, b, n1x * halfWidth, n1y * halfWidth, n1z * halfWidth);
-        addQuad(t, a, b, n2x * halfWidth, n2y * halfWidth, n2z * halfWidth);
+        t.setColorOpaque_I(color);
+        addQuad(t, a, b, n1x * halfWidth, n1y * halfWidth, n1z * halfWidth, briA, briB);
+        addQuad(t, a, b, n2x * halfWidth, n2y * halfWidth, n2z * halfWidth, briA, briB);
     }
 
-    private void addQuad(Tessellator t, double[] a, double[] b, double ox, double oy, double oz)
+    private void addQuad(Tessellator t, double[] a, double[] b, double ox, double oy, double oz,
+            int briA, int briB)
     {
+        t.setBrightness(briA);
         t.addVertex(a[0] + ox, a[1] + oy, a[2] + oz);
+        t.setBrightness(briB);
         t.addVertex(b[0] + ox, b[1] + oy, b[2] + oz);
+        t.setBrightness(briB);
         t.addVertex(b[0] - ox, b[1] - oy, b[2] - oz);
+        t.setBrightness(briA);
         t.addVertex(a[0] - ox, a[1] - oy, a[2] - oz);
+    }
+
+    /**
+     * Packed sky/block light at a cord point's world position, for
+     * {@link Tessellator#setBrightness}. Sampling per point keeps the cord lit by
+     * its surroundings instead of inheriting the (possibly buried) hook's brightness.
+     */
+    private int cordBrightness(World world, double[] localPt, double offX, double offY, double offZ)
+    {
+        if (world == null) return 0x00F000F0; // full bright fallback
+        int wx = MathHelper.floor_double(localPt[0] + offX);
+        int wy = MathHelper.floor_double(localPt[1] + offY);
+        int wz = MathHelper.floor_double(localPt[2] + offZ);
+        return world.getLightBrightnessForSkyBlocks(wx, wy, wz, 0);
     }
 
     /** World position of the held item's tip, ported from RenderFish. */

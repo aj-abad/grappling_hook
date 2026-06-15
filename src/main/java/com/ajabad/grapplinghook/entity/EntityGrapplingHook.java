@@ -52,6 +52,13 @@ public class EntityGrapplingHook extends Entity
      */
     public double renderSlack;
 
+    /**
+     * Ticks spent in {@link #STATE_RETRACTING}, reset to 0 in any other state. Lets
+     * the renderer ease the in-flight cord from drooped to taut as the hook reels in,
+     * rather than snapping it straight the instant retract begins.
+     */
+    public int retractTicks;
+
     public EntityGrapplingHook(World world)
     {
         super(world);
@@ -186,6 +193,9 @@ public class EntityGrapplingHook extends Entity
             default:
                 break;
         }
+
+        // Count ticks spent retracting so the renderer can ease the cord taut.
+        this.retractTicks = (getState() == STATE_RETRACTING) ? this.retractTicks + 1 : 0;
     }
 
     private boolean isOwnerValid(EntityPlayer owner)
