@@ -3,6 +3,7 @@ package com.ajabad.grapplinghook.client.render;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.ajabad.grapplinghook.Reference;
 import com.ajabad.grapplinghook.Tuning;
 import com.ajabad.grapplinghook.entity.EntityGrapplingHook;
 
@@ -32,7 +33,8 @@ import org.lwjgl.opengl.GL12;
 @SideOnly(Side.CLIENT)
 public class RenderGrapplingHook extends Render
 {
-    private static final ResourceLocation ARROW_TEX = new ResourceLocation("textures/entity/arrow.png");
+    private static final ResourceLocation ARROW_TEX =
+            new ResourceLocation(Reference.MODID, "textures/items/arrows.png");
 
     @Override
     public void doRender(Entity entity, double x, double y, double z, float yaw, float partial)
@@ -50,42 +52,50 @@ public class RenderGrapplingHook extends Render
         GL11.glRotatef(hook.prevRotationYaw + (hook.rotationYaw - hook.prevRotationYaw) * partial - 90.0F, 0.0F, 1.0F, 0.0F);
         GL11.glRotatef(hook.prevRotationPitch + (hook.rotationPitch - hook.prevRotationPitch) * partial, 0.0F, 0.0F, 1.0F);
         Tessellator t = Tessellator.instance;
-        float f4 = 0.0F / 32.0F;
-        float f5 = 5.0F / 32.0F;
-        float f6 = 0.0F;
-        float f7 = 0.15625F;
-        float f8 = 5.0F / 32.0F;
-        float f9 = 10.0F / 32.0F;
+
+        // UVs into the hook texture (textures/items/arrows.png, 16x12 px). The arrow
+        // seen side-on is the top 16x7 block (the four "shaft" planes); the back-end
+        // cross-section is the 5x5 block directly below it, starting at y=7.
+        float shaftU0 = 0.0F,         shaftU1 = 16.0F / 16.0F;
+        float shaftV0 = 0.0F,         shaftV1 = 7.0F / 12.0F;
+        float backU0  = 0.0F,         backU1  = 5.0F / 16.0F;
+        float backV0  = 7.0F / 12.0F, backV1  = 12.0F / 12.0F;
+
         float scale = 0.05625F;
         GL11.glEnable(GL12.GL_RESCALE_NORMAL);
         GL11.glRotatef(45.0F, 1.0F, 0.0F, 0.0F);
         GL11.glScalef(scale, scale, scale);
         GL11.glTranslatef(-4.0F, 0.0F, 0.0F);
+
+        // The flat square at the back of the arrow, drawn from both faces.
         GL11.glNormal3f(scale, 0.0F, 0.0F);
         t.startDrawingQuads();
-        t.addVertexWithUV(-7.0D, -2.0D, -2.0D, f6, f8);
-        t.addVertexWithUV(-7.0D, -2.0D, 2.0D, f7, f8);
-        t.addVertexWithUV(-7.0D, 2.0D, 2.0D, f7, f9);
-        t.addVertexWithUV(-7.0D, 2.0D, -2.0D, f6, f9);
+        t.addVertexWithUV(-7.0D, -2.0D, -2.0D, backU0, backV0);
+        t.addVertexWithUV(-7.0D, -2.0D, 2.0D, backU1, backV0);
+        t.addVertexWithUV(-7.0D, 2.0D, 2.0D, backU1, backV1);
+        t.addVertexWithUV(-7.0D, 2.0D, -2.0D, backU0, backV1);
         t.draw();
         GL11.glNormal3f(-scale, 0.0F, 0.0F);
         t.startDrawingQuads();
-        t.addVertexWithUV(-7.0D, 2.0D, -2.0D, f6, f8);
-        t.addVertexWithUV(-7.0D, 2.0D, 2.0D, f7, f8);
-        t.addVertexWithUV(-7.0D, -2.0D, 2.0D, f7, f9);
-        t.addVertexWithUV(-7.0D, -2.0D, -2.0D, f6, f9);
+        t.addVertexWithUV(-7.0D, 2.0D, -2.0D, backU0, backV0);
+        t.addVertexWithUV(-7.0D, 2.0D, 2.0D, backU1, backV0);
+        t.addVertexWithUV(-7.0D, -2.0D, 2.0D, backU1, backV1);
+        t.addVertexWithUV(-7.0D, -2.0D, -2.0D, backU0, backV1);
         t.draw();
+
+        // The shaft: four planes in a + cross, each showing the side view.
         for (int i = 0; i < 4; ++i)
         {
             GL11.glRotatef(90.0F, 1.0F, 0.0F, 0.0F);
             GL11.glNormal3f(0.0F, 0.0F, scale);
             t.startDrawingQuads();
-            t.addVertexWithUV(-8.0D, -2.0D, 0.0D, 0.0F, f4);
-            t.addVertexWithUV(8.0D, -2.0D, 0.0D, 0.5F, f4);
-            t.addVertexWithUV(8.0D, 2.0D, 0.0D, 0.5F, f5);
-            t.addVertexWithUV(-8.0D, 2.0D, 0.0D, 0.0F, f5);
+            t.addVertexWithUV(-8.0D, -2.0D, 0.0D, shaftU0, shaftV0);
+            t.addVertexWithUV(8.0D, -2.0D, 0.0D, shaftU1, shaftV0);
+            t.addVertexWithUV(8.0D, 2.0D, 0.0D, shaftU1, shaftV1);
+            t.addVertexWithUV(-8.0D, 2.0D, 0.0D, shaftU0, shaftV1);
             t.draw();
         }
+
         GL11.glDisable(GL12.GL_RESCALE_NORMAL);
         GL11.glPopMatrix();
     }

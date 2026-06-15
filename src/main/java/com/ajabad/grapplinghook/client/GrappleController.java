@@ -121,19 +121,25 @@ public final class GrappleController
 
         ensureStuckCable(player);
 
-        // Jump handling (mid-air only). Priority: wall jump if pressed against a
-        // wall, otherwise a swing jump if the rope is taut.
+        // Jump handling (mid-air only). The player's facing disambiguates intent:
+        // looking at the wall the anchor sits on => wall jump (kick off it, cable
+        // stays attached); looking away while actually swinging => swing jump (release
+        // with a boost). A jump in between does nothing -- use the Disconnect key to
+        // drop a taut, motionless rope.
         boolean wallJumped = false;
         if (jumpEdge && midAir)
         {
-            if (player.isCollidedHorizontally)
+            if (isFacingWall(player))
             {
-                wallJump(player); // arc off the wall, cable stays attached
-                wallJumped = true;
+                if (player.isCollidedHorizontally)
+                {
+                    wallJump(player); // arc off the wall, cable stays attached
+                    wallJumped = true;
+                }
             }
-            else if (isTaut(player))
+            else if (isTaut(player) && swingSpeed(player) >= Tuning.SWING_JUMP_MIN_SPEED)
             {
-                swingJump(player); // release with a boost off the swing
+                swingJump(player); // release with a boost off a real swing
                 return;
             }
         }
@@ -342,8 +348,13 @@ public final class GrappleController
         double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (dist < 1.0E-4D) return;
 
-        // Velocity points at the (raised) anchor; force scales with cable length.
-        double speed = Math.min(Tuning.YANK_K * this.cable.cableLength, Tuning.YANK_MAX_SPEED);
+        // Velocity points at the (raised) anchor; force scales with the TAUT length
+        // only -- the cable pulled straight from the anchor to the player (the
+        // already-wrapped segments, always taut, plus the active span's real
+        // straight-line extent). Spooled-out slack is excluded, so paying cable out
+        // without moving away from the anchor doesn't inflate the yank.
+        double tautLength = this.cable.consumedLength() + CableModel.dist(tp, p);
+        double speed = Math.min(Tuning.YANK_K * tautLength, Tuning.YANK_MAX_SPEED);
         player.motionX = dx / dist * speed;
         player.motionY = dy / dist * speed;
         player.motionZ = dz / dist * speed;
@@ -389,6 +400,48 @@ public final class GrappleController
     {
         double activeDist = CableModel.dist(tetherPoint(player), this.cable.activePivot());
         return activeDist >= this.cable.activeLength() - Tuning.TAUT_EPSILON;
+    }
+
+    /**
+     * Is the player looking roughly at the wall the anchor sits on? Compares the
+     * horizontal look direction against the horizontal direction to the active pivot
+     * (which points into the wall when scaling one). Used to tell a wall jump apart
+     * from a swing jump.
+     */
+    private boolean isFacingWall(EntityPlayer player)
+    {
+        Vec3 p = this.cable.activePivot();
+        double toX = p.xCoord - player.posX;
+        double toZ = p.zCoord - player.posZ;
+        double toLen = Math.sqrt(toX * toX + toZ * toZ);
+        if (toLen < 1.0E-4D) return false; // anchor directly above/below: no wall dir
+        toX /= toLen; toZ /= toLen;
+
+        // Horizontal forward look (matches the moveFlying decomposition in applySwing).
+        double yaw = Math.toRadians(player.rotationYaw);
+        double lookX = -Math.sin(yaw);
+        double lookZ = Math.cos(yaw);
+
+        return lookX * toX + lookZ * toZ >= Tuning.WALL_JUMP_FACING_DOT;
+    }
+
+    /** The player's speed tangential to the rope -- i.e. how fast they're swinging. */
+    private double swingSpeed(EntityPlayer player)
+    {
+        Vec3 p = this.cable.activePivot();
+        double offY = player.height * 0.5D;
+        double dx = player.posX - p.xCoord;
+        double dy = (player.posY + offY) - p.yCoord;
+        double dz = player.posZ - p.zCoord;
+        double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (dist < 1.0E-4D) return 0.0D;
+
+        double nx = dx / dist, ny = dy / dist, nz = dz / dist;
+        double radial = player.motionX * nx + player.motionY * ny + player.motionZ * nz;
+        double tx = player.motionX - nx * radial;
+        double ty = player.motionY - ny * radial;
+        double tz = player.motionZ - nz * radial;
+        return Math.sqrt(tx * tx + ty * ty + tz * tz);
     }
 
     /** Jump off a taut swing: launch with a boost and disconnect the hook. */

@@ -45,7 +45,7 @@ public final class Tuning
     public static final double EXTEND_SPEED = 0.15D;
 
     // --- Yank (left-click while stuck) --------------------------------------
-    /** Yank speed per block of cable length (force grows with the cable). */
+    /** Yank speed per block of taut cable (anchor-to-player straight pull; slack ignored). */
     public static final double YANK_K = 0.14D;
     /** Upper bound on yank speed regardless of cable length. */
     public static final double YANK_MAX_SPEED = 4D;
@@ -65,12 +65,25 @@ public final class Tuning
     public static final double JUMP_BOOST = 0.5D;
     /** Upward momentum added on release (~vanilla jump velocity). */
     public static final double JUMP_UP = 0.5D;
+    /**
+     * Minimum tangential (swing) speed, in blocks/tick, required to swing-jump.
+     * Below this a mid-air jump does nothing, so a taut-but-motionless rope can't be
+     * jumped off by accident -- use the Disconnect key to drop it instead.
+     */
+    public static final double SWING_JUMP_MIN_SPEED = 0.2D;
 
     // --- Wall jump (jump while tethered against a wall) ----------------------
     /** Horizontal away-from-wall impulse; tuned to clear ~1.5 blocks. */
     public static final double WALL_JUMP_H = 0.5D;
     /** Upward impulse of a wall jump. */
     public static final double WALL_JUMP_UP = 0.5D;
+    /**
+     * Minimum cos(angle) between the player's horizontal look and the horizontal
+     * direction to the anchor for a jump to count as a wall jump (vs a swing jump).
+     * 0.5 == a ~60-degree cone: the player must be looking roughly at the wall the
+     * anchor sits on. Looking away from it makes the same jump a swing jump.
+     */
+    public static final double WALL_JUMP_FACING_DOT = 0.5D;
 
     // --- Yank FoV punch (purely cosmetic) -----------------------------------
     // Vanilla smooths the FoV multiplier (~0.5/tick lerp) and clamps it to 1.5, so
