@@ -1,5 +1,6 @@
 package com.ajabad.grapplinghook.proxy;
 
+import com.ajabad.grapplinghook.client.ClientEffects;
 import com.ajabad.grapplinghook.client.ClientInputHandler;
 import com.ajabad.grapplinghook.client.ModKeys;
 import com.ajabad.grapplinghook.client.render.RenderGrapplingHook;
@@ -27,6 +28,10 @@ public class ClientProxy extends CommonProxy
         ClientInputHandler input = new ClientInputHandler();
         FMLCommonHandler.instance().bus().register(input); // ClientTickEvent
         MinecraftForge.EVENT_BUS.register(input);          // MouseEvent
+
+        ClientEffects effects = ClientEffects.INSTANCE;
+        FMLCommonHandler.instance().bus().register(effects); // ClientTickEvent (decay)
+        MinecraftForge.EVENT_BUS.register(effects);          // FOVUpdateEvent
     }
 
     @Override

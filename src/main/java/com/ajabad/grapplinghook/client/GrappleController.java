@@ -17,6 +17,8 @@ import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.Vec3;
 
+import org.lwjgl.input.Keyboard;
+
 /**
  * Client-side tether physics for the local player. Runs each client tick after
  * the player has moved, then corrects the player against the rope:
@@ -124,9 +126,11 @@ public final class GrappleController
         {
             applyReel();
         }
-        else if (ModKeys.EXTEND.getIsKeyPressed())
+        else if (mc.inGameHasFocus && Keyboard.isKeyDown(ModKeys.EXTEND.getKeyCode()))
         {
-            applyExtend();
+            // Read the physical key (respecting any rebind) rather than the keybind's
+            // pressed flag, which another mod's keycode collision can swallow.
+            applyExtend(player);
         }
 
         if (!wallJumped)
@@ -156,9 +160,10 @@ public final class GrappleController
         {
             ModNetwork.CHANNEL.sendToServer(new MsgRetract());
         }
-        else if (state == EntityGrapplingHook.STATE_STUCK && !player.onGround)
+        else if (state == EntityGrapplingHook.STATE_STUCK)
         {
-            // Yank only works mid-air.
+            // Yank works from the ground as well as mid-air; the upward aim
+            // (YANK_RISE) gives it enough lift to leave the ground.
             ensureStuckCable(player);
             yank(player);
         }
@@ -195,13 +200,40 @@ public final class GrappleController
         }
     }
 
-    private void applyExtend()
+    private void applyExtend(EntityPlayer player)
     {
-        if (this.cable.cableLength < Tuning.MAX_CABLE_LENGTH)
+        if (this.cable.cableLength >= Tuning.MAX_CABLE_LENGTH) return;
+
+        boolean wasTaut = isTaut(player);
+        this.cable.cableLength = Math.min(Tuning.MAX_CABLE_LENGTH,
+                this.cable.cableLength + Tuning.EXTEND_SPEED);
+        if (!wasTaut) return; // slack rope: just bank the extra length
+
+        // Taut: actively pay the player out onto the new, larger sphere and damp the
+        // outward velocity, so the descent is a smooth fixed rate (mirrors reel-in,
+        // which the constraint pulls inward; the constraint never pushes outward).
+        Vec3 p = this.cable.activePivot();
+        double offY = player.height * 0.5D;
+        double dx = player.posX - p.xCoord;
+        double dy = (player.posY + offY) - p.yCoord;
+        double dz = player.posZ - p.zCoord;
+        double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (dist < 1.0E-4D) return;
+
+        double nx = dx / dist, ny = dy / dist, nz = dz / dist;
+        double length = this.cable.activeLength();
+        player.moveEntity(p.xCoord + nx * length - player.posX,
+                p.yCoord + ny * length - offY - player.posY,
+                p.zCoord + nz * length - player.posZ);
+
+        double outward = player.motionX * nx + player.motionY * ny + player.motionZ * nz;
+        if (outward > 0.0D)
         {
-            this.cable.cableLength = Math.min(Tuning.MAX_CABLE_LENGTH,
-                    this.cable.cableLength + Tuning.EXTEND_SPEED);
+            player.motionX -= nx * outward;
+            player.motionY -= ny * outward;
+            player.motionZ -= nz * outward;
         }
+        player.fallDistance = 0.0F;
     }
 
     private void applyConstraintAndSwing(EntityPlayer player)
@@ -291,6 +323,7 @@ public final class GrappleController
         player.motionY = dy / dist * speed;
         player.motionZ = dz / dist * speed;
         player.fallDistance = 0.0F;
+        ClientEffects.INSTANCE.onYank(speed); // cosmetic FoV punch, scaled by force
 
         // Instantly disconnect: prime the item now, have the server drop the hook,
         // and enter the free yank-flight state (where jump can launch).

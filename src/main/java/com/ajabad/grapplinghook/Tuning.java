@@ -17,6 +17,8 @@ public final class Tuning
     public static final double AIR_DRAG = 0.99D;
     /** Hard cap on flight time before a never-hit shot self-destructs. */
     public static final int MAX_FLIGHT_TICKS = 200;
+    /** Max distance a fired hook may travel before a miss is cleaned up instantly. */
+    public static final double MAX_GRAPPLE_RANGE = 64.0D;
     /** Backstop teardown distance (squared) between owner and hook. */
     public static final double MAX_RANGE_SQ = 256.0D * 256.0D;
 
@@ -60,21 +62,29 @@ public final class Tuning
 
     // --- Jump release -------------------------------------------------------
     /** Horizontal momentum added along the swing direction on release. */
-    public static final double JUMP_BOOST = 0.4D;
+    public static final double JUMP_BOOST = 0.5D;
     /** Upward momentum added on release (~vanilla jump velocity). */
-    public static final double JUMP_UP = 0.42D;
+    public static final double JUMP_UP = 0.5D;
 
     // --- Wall jump (jump while tethered against a wall) ----------------------
     /** Horizontal away-from-wall impulse; tuned to clear ~1.5 blocks. */
     public static final double WALL_JUMP_H = 0.6D;
     /** Upward impulse of a wall jump. */
-    public static final double WALL_JUMP_UP = 0.45D;
+    public static final double WALL_JUMP_UP = 0.5D;
+
+    // --- Yank FoV punch (purely cosmetic) -----------------------------------
+    // Vanilla smooths the FoV multiplier (~0.5/tick lerp) and clamps it to 1.5, so
+    // these are over-driven and decay slowly enough for the swell to read clearly.
+    /** FoV-multiplier bonus from a full-force yank (scales with yank speed). */
+    public static final double FOV_PUNCH_MAX = 0.5D;
+    /** Per-tick decay of the yank FoV punch back to zero. */
+    public static final double FOV_PUNCH_DECAY = 0.88D;
 
     // --- Rendering ----------------------------------------------------------
     /** Half-thickness of the drawn cord, in blocks. */
     public static final float CORD_WIDTH = 0.05F;
     /** Sub-segments each cord span is split into, for the drooping curve. */
-    public static final int CORD_SUBDIVISIONS = 8;
+    public static final int CORD_SUBDIVISIONS = 16;
     /** Multiplier on the slack-derived droop of the anchored active span. */
     public static final double CORD_SAG_SCALE = 1.0D;
     /** Droop of the in-flight cord as a fraction of its length (a loose throw). */

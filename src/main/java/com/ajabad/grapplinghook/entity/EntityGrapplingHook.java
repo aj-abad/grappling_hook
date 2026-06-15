@@ -237,10 +237,18 @@ public class EntityGrapplingHook extends Entity
         updateRotationFromMotion();
         this.setPosition(this.posX, this.posY, this.posZ);
 
-        if (!this.worldObj.isRemote && this.ticksInAir > Tuning.MAX_FLIGHT_TICKS)
+        if (!this.worldObj.isRemote)
         {
-            resetOwnerStack(getOwner());
-            this.setDead();
+            // A miss that flies past the grapple range (or never lands at all) is
+            // cleaned up at once and the stack returns to primed.
+            EntityPlayer owner = getOwner();
+            double maxSq = Tuning.MAX_GRAPPLE_RANGE * Tuning.MAX_GRAPPLE_RANGE;
+            if (this.ticksInAir > Tuning.MAX_FLIGHT_TICKS
+                    || (owner != null && this.getDistanceSqToEntity(owner) > maxSq))
+            {
+                resetOwnerStack(owner);
+                this.setDead();
+            }
         }
     }
 
