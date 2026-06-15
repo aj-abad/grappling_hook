@@ -72,20 +72,23 @@ public class RenderGrapplingHook extends Render
         GL11.glScalef(scale, scale, scale);
         GL11.glTranslatef(-4.0F, 0.0F, 0.0F);
 
-        // The flat square at the back of the arrow, drawn from both faces.
+        // The flat cross-section capping the tail, drawn from both faces. It sits at
+        // x=-8 (the back edge of the shaft planes), not vanilla's -7: the arrow art
+        // runs the full 16px to that edge, so the square lines up with the feathers
+        // drawn on the shaft instead of floating 1px ahead of them.
         GL11.glNormal3f(scale, 0.0F, 0.0F);
         t.startDrawingQuads();
-        t.addVertexWithUV(-7.0D, -2.0D, -2.0D, backU0, backV0);
-        t.addVertexWithUV(-7.0D, -2.0D, 2.0D, backU1, backV0);
-        t.addVertexWithUV(-7.0D, 2.0D, 2.0D, backU1, backV1);
-        t.addVertexWithUV(-7.0D, 2.0D, -2.0D, backU0, backV1);
+        t.addVertexWithUV(-8.0D, -2.0D, -2.0D, backU0, backV0);
+        t.addVertexWithUV(-8.0D, -2.0D, 2.0D, backU1, backV0);
+        t.addVertexWithUV(-8.0D, 2.0D, 2.0D, backU1, backV1);
+        t.addVertexWithUV(-8.0D, 2.0D, -2.0D, backU0, backV1);
         t.draw();
         GL11.glNormal3f(-scale, 0.0F, 0.0F);
         t.startDrawingQuads();
-        t.addVertexWithUV(-7.0D, 2.0D, -2.0D, backU0, backV0);
-        t.addVertexWithUV(-7.0D, 2.0D, 2.0D, backU1, backV0);
-        t.addVertexWithUV(-7.0D, -2.0D, 2.0D, backU1, backV1);
-        t.addVertexWithUV(-7.0D, -2.0D, -2.0D, backU0, backV1);
+        t.addVertexWithUV(-8.0D, 2.0D, -2.0D, backU0, backV0);
+        t.addVertexWithUV(-8.0D, 2.0D, 2.0D, backU1, backV0);
+        t.addVertexWithUV(-8.0D, -2.0D, 2.0D, backU1, backV1);
+        t.addVertexWithUV(-8.0D, -2.0D, -2.0D, backU0, backV1);
         t.draw();
 
         // The shaft: four planes in a + cross, each showing the side view.

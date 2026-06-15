@@ -32,19 +32,29 @@ public final class ClientEffects
     {
         double frac = Math.min(1.0D, speed / Tuning.YANK_MAX_SPEED);
         this.fovPunch = frac * Tuning.FOV_PUNCH_MAX;
+        System.out.println("[GrappleFOV] onYank speed=" + speed + " frac=" + frac + " fovPunch=" + this.fovPunch);
     }
 
     @SubscribeEvent
     public void onClientTick(TickEvent.ClientTickEvent event)
     {
         if (event.phase != TickEvent.Phase.END) return;
-        this.fovPunch *= Tuning.FOV_PUNCH_DECAY;
-        if (this.fovPunch < 0.001D) this.fovPunch = 0.0D;
+        if (this.fovPunch != 0.0D)
+        {
+            this.fovPunch *= Tuning.FOV_PUNCH_DECAY;
+            if (this.fovPunch < 0.001D) this.fovPunch = 0.0D;
+            System.out.println("[GrappleFOV] decay -> fovPunch=" + this.fovPunch);
+        }
     }
 
     @SubscribeEvent
     public void onFOV(FOVUpdateEvent event)
     {
-        if (this.fovPunch != 0.0D) event.newfov += (float) this.fovPunch;
+        if (this.fovPunch != 0.0D)
+        {
+            float before = event.newfov;
+            event.newfov += (float) this.fovPunch;
+            System.out.println("[GrappleFOV] onFOV " + before + " -> " + event.newfov + " (punch=" + this.fovPunch + ")");
+        }
     }
 }

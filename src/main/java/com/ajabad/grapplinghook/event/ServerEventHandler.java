@@ -75,11 +75,40 @@ public final class ServerEventHandler
         tearDown(event.player);
     }
 
+    @SubscribeEvent
+    public void onPlayerLogin(PlayerEvent.PlayerLoggedInEvent event)
+    {
+        // A hook entity never persists its owner, so a still-"fired" hook in the
+        // inventory at login is always stale: the world was saved mid-grapple. A
+        // clean quit saves players *before* the logout teardown runs (and the
+        // periodic autosave writes the fired stack too), so the spent state reaches
+        // disk. Without this, the icon sticks fired forever and the hook can never
+        // re-fire. Restore it to primed -- the matching login is the symmetric undo
+        // of the logout teardown above.
+        resetFiredStacks(event.player);
+    }
+
     /** Remove the player's hook and restore the surviving stack to primed. */
     private static void tearDown(EntityPlayer player)
     {
         if (player == null || player.worldObj == null || player.worldObj.isRemote) return;
         EntityGrapplingHook hook = EntityGrapplingHook.findForPlayer(player);
         if (hook != null) hook.killAndResetStack();
+    }
+
+    /** Restore every fired hook in the player's inventory to primed. */
+    private static void resetFiredStacks(EntityPlayer player)
+    {
+        if (player == null) return;
+        ItemStack[] inv = player.inventory.mainInventory;
+        for (int i = 0; i < inv.length; ++i)
+        {
+            ItemStack s = inv[i];
+            if (s != null && s.getItem() instanceof ItemGrapplingHook
+                    && s.getItemDamage() == ItemGrapplingHook.META_FIRED)
+            {
+                s.setItemDamage(ItemGrapplingHook.META_PRIMED);
+            }
+        }
     }
 }

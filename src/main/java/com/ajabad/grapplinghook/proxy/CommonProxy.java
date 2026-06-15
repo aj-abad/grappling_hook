@@ -31,7 +31,7 @@ public class CommonProxy
     public void init(FMLInitializationEvent event)
     {
         ServerEventHandler handler = new ServerEventHandler();
-        FMLCommonHandler.instance().bus().register(handler); // ServerTickEvent, PlayerLoggedOutEvent
+        FMLCommonHandler.instance().bus().register(handler); // ServerTickEvent, PlayerLoggedIn/OutEvent
         MinecraftForge.EVENT_BUS.register(handler);          // ItemTossEvent, LivingDeathEvent
     }
 

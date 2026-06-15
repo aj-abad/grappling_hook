@@ -1,0 +1,11 @@
+{
+  "name": "grapplinghook",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Build helpers for the 1.7.10 grappling hook Forge mod.",
+  "scripts": {
+    "build": "node scripts/deploy.mjs --no-copy",
+    "copy": "node scripts/deploy.mjs --no-build",
+    "deploy": "node scripts/deploy.mjs"
+  }
+}
