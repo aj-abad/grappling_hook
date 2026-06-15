@@ -17,11 +17,12 @@ public final class ModEntities
 
     public static void register()
     {
-        // trackingRange 64, updateFrequency 5, sendVelocityUpdates true. Like a
-        // vanilla arrow the client runs the flight physics itself (prediction), so
-        // it stays smooth between the periodic server corrections.
+        // trackingRange 64, updateFrequency 1, sendVelocityUpdates true. The client
+        // runs the flight physics itself (prediction) like a vanilla arrow, and a
+        // per-tick position correction keeps client and server on the same path so
+        // they detect the block impact on the same tick (no mid-air anchoring).
         EntityRegistry.registerModEntity(EntityGrapplingHook.class, "grappling_hook",
-                ID_GRAPPLING_HOOK, ModGrapplingHook.instance, 64, 5, true);
+                ID_GRAPPLING_HOOK, ModGrapplingHook.instance, 64, 1, true);
     }
 
     private ModEntities() {}

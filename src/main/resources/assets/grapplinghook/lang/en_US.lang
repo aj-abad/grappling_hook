@@ -5,3 +5,6 @@
 #   key.grapplinghook.fire=Fire Grapple
 
 item.grappling_hook.name=Grappling Hook
+
+key.categories.grapplinghook=Grappling Hook
+key.grapplinghook.extend=Extend Cable

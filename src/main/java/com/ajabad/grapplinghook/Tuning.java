@@ -25,16 +25,22 @@ public final class Tuning
     public static final double LEEWAY = 1.0D;
     /** Smallest the active (player-side) segment may be reeled to. */
     public static final double MIN_ACTIVE_LENGTH = 1.0D;
+    /** Upper bound on cable length (the extend control caps out here). */
+    public static final double MAX_CABLE_LENGTH = 128.0D;
+    /** How close to full extension counts as "taut" (for swing-jump detection). */
+    public static final double TAUT_EPSILON = 0.5D;
 
     // --- Swing --------------------------------------------------------------
     /** Tangential acceleration WASD adds to a swing each tick. */
     public static final double SWING_ACCEL = 0.03D;
 
-    // --- Reel-in (hold use key) ---------------------------------------------
+    // --- Reel-in (hold use key) / extend (hold extend key) ------------------
     /** Blocks/tick the cable shortens while reeling. */
     public static final double REEL_SPEED = 0.15D;
     /** Extra inward pull velocity applied while reeling. */
     public static final double REEL_PULL = 0.18D;
+    /** Blocks/tick the cable lengthens while the extend key is held. */
+    public static final double EXTEND_SPEED = 0.15D;
 
     // --- Yank (left-click while stuck) --------------------------------------
     /** Yank speed per block of cable length (force grows with the cable). */
@@ -55,6 +61,12 @@ public final class Tuning
     public static final double JUMP_BOOST = 0.4D;
     /** Upward momentum added on release (~vanilla jump velocity). */
     public static final double JUMP_UP = 0.42D;
+
+    // --- Wall jump (jump while tethered against a wall) ----------------------
+    /** Horizontal away-from-wall impulse; tuned to clear ~1.5 blocks. */
+    public static final double WALL_JUMP_H = 0.6D;
+    /** Upward impulse of a wall jump. */
+    public static final double WALL_JUMP_UP = 0.45D;
 
     // --- Rendering ----------------------------------------------------------
     /** Half-thickness of the drawn cord, in blocks. */

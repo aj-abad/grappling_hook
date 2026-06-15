@@ -1,6 +1,7 @@
 package com.ajabad.grapplinghook.proxy;
 
 import com.ajabad.grapplinghook.client.ClientInputHandler;
+import com.ajabad.grapplinghook.client.ModKeys;
 import com.ajabad.grapplinghook.client.render.RenderGrapplingHook;
 import com.ajabad.grapplinghook.entity.EntityGrapplingHook;
 
@@ -21,6 +22,7 @@ public class ClientProxy extends CommonProxy
     {
         super.init(event);
         registerRenderers();
+        ModKeys.register();
 
         ClientInputHandler input = new ClientInputHandler();
         FMLCommonHandler.instance().bus().register(input); // ClientTickEvent

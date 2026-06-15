@@ -31,6 +31,9 @@ public class EntityGrapplingHook extends Entity
 
     private static final int DW_STATE = 16;
     private static final int DW_OWNER = 17;
+    private static final int DW_ANCHOR_X = 18;
+    private static final int DW_ANCHOR_Y = 19;
+    private static final int DW_ANCHOR_Z = 20;
 
     private int ticksInAir;
 
@@ -93,6 +96,11 @@ public class EntityGrapplingHook extends Entity
     {
         this.dataWatcher.addObject(DW_STATE, Byte.valueOf(STATE_FLYING));
         this.dataWatcher.addObject(DW_OWNER, Integer.valueOf(-1));
+        // Authoritative anchor, synced on stick. A motionless stuck entity sends no
+        // position packets, so we cannot rely on entity tracking for the anchor.
+        this.dataWatcher.addObject(DW_ANCHOR_X, Float.valueOf(0.0F));
+        this.dataWatcher.addObject(DW_ANCHOR_Y, Float.valueOf(0.0F));
+        this.dataWatcher.addObject(DW_ANCHOR_Z, Float.valueOf(0.0F));
     }
 
     public byte getState() { return this.dataWatcher.getWatchableObjectByte(DW_STATE); }
@@ -162,6 +170,15 @@ public class EntityGrapplingHook extends Entity
             case STATE_STUCK:
                 // Anchor is fixed; the owning client drives its own swing physics.
                 this.motionX = this.motionY = this.motionZ = 0.0D;
+                if (this.worldObj.isRemote)
+                {
+                    // Snap to the authoritative anchor: client flight prediction can
+                    // stop a touch off, and the motionless entity won't be re-synced.
+                    this.setPosition(
+                            this.dataWatcher.getWatchableObjectFloat(DW_ANCHOR_X),
+                            this.dataWatcher.getWatchableObjectFloat(DW_ANCHOR_Y),
+                            this.dataWatcher.getWatchableObjectFloat(DW_ANCHOR_Z));
+                }
                 break;
             case STATE_RETRACTING:
                 tickRetracting();
@@ -200,6 +217,10 @@ public class EntityGrapplingHook extends Entity
             this.setPosition(this.posX, this.posY, this.posZ);
             if (!this.worldObj.isRemote)
             {
+                // Publish the exact anchor before flipping state so they sync together.
+                this.dataWatcher.updateObject(DW_ANCHOR_X, Float.valueOf((float) this.posX));
+                this.dataWatcher.updateObject(DW_ANCHOR_Y, Float.valueOf((float) this.posY));
+                this.dataWatcher.updateObject(DW_ANCHOR_Z, Float.valueOf((float) this.posZ));
                 setState(STATE_STUCK);
                 this.playSound("random.bowhit", 0.6F, 1.0F / (this.rand.nextFloat() * 0.2F + 0.9F));
             }

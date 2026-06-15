@@ -42,6 +42,7 @@ public final class GrappleController
     private EntityGrapplingHook hook;
     private boolean stuckInitialized;
     private boolean prevJumpDown;
+    private boolean prevOnGround;
     private int suppressedHookId = -1; // a released hook awaiting despawn
 
     // Yank flight: after a left-click yank the hook is gone and the player is
@@ -60,23 +61,28 @@ public final class GrappleController
         if (player == null) { reset(); return; }
 
         boolean jumpDown = mc.gameSettings.keyBindJump.getIsKeyPressed();
+        boolean jumpEdge = jumpDown && !this.prevJumpDown;
+        this.prevJumpDown = jumpDown;
+
+        // "Mid-air" means airborne this tick AND last tick. This rejects the tick a
+        // jump leaves the ground (where onGround is already false but we were just
+        // standing), so a normal ground jump never triggers a swing/wall jump.
+        boolean midAir = !player.onGround && !this.prevOnGround;
+        this.prevOnGround = player.onGround;
 
         // Yank flight: the hook is already gone; the only special input left is the
-        // jump-launch. (This is the ONLY state where jump launches.) Firing a fresh
-        // hook cancels the flight so the new grapple takes over at once.
+        // jump-launch. Firing a fresh hook cancels the flight so the new grapple
+        // takes over at once.
         if (this.yanking)
         {
             EntityGrapplingHook fresh = EntityGrapplingHook.findForPlayer(player);
             if (fresh == null || fresh.getEntityId() == this.suppressedHookId)
             {
-                boolean jumpEdge = jumpDown && !this.prevJumpDown;
-                this.prevJumpDown = jumpDown;
                 tickYank(player, jumpEdge);
                 return;
             }
             endYank(); // a new hook exists; fall through to normal handling
         }
-        this.prevJumpDown = jumpDown;
 
         this.hook = EntityGrapplingHook.findForPlayer(player);
         if (this.hook == null) { reset(); return; }
@@ -97,15 +103,38 @@ public final class GrappleController
 
         ensureStuckCable(player);
 
+        // Jump handling (mid-air only). Priority: wall jump if pressed against a
+        // wall, otherwise a swing jump if the rope is taut.
+        boolean wallJumped = false;
+        if (jumpEdge && midAir)
+        {
+            if (player.isCollidedHorizontally)
+            {
+                wallJump(player); // arc off the wall, cable stays attached
+                wallJumped = true;
+            }
+            else if (isTaut(player))
+            {
+                swingJump(player); // release with a boost off the swing
+                return;
+            }
+        }
+
         if (mc.gameSettings.keyBindUseItem.getIsKeyPressed())
         {
             applyReel();
         }
+        else if (ModKeys.EXTEND.getIsKeyPressed())
+        {
+            applyExtend();
+        }
 
-        // Re-shape the cord around ledges/corners, then enforce it.
-        this.cable.update(player.worldObj, tetherPoint(player));
-
-        applyConstraintAndSwing(player);
+        if (!wallJumped)
+        {
+            // Re-shape the cord around ledges/corners, then enforce it.
+            this.cable.update(player.worldObj, tetherPoint(player));
+            applyConstraintAndSwing(player);
+        }
 
         // Report slack (max distance minus current distance) so the cord sags only
         // when the rope isn't taut, simulating one consistent cable length.
@@ -166,8 +195,18 @@ public final class GrappleController
         }
     }
 
+    private void applyExtend()
+    {
+        if (this.cable.cableLength < Tuning.MAX_CABLE_LENGTH)
+        {
+            this.cable.cableLength = Math.min(Tuning.MAX_CABLE_LENGTH,
+                    this.cable.cableLength + Tuning.EXTEND_SPEED);
+        }
+    }
+
     private void applyConstraintAndSwing(EntityPlayer player)
     {
+        boolean onGround = player.onGround;
         Vec3 p = this.cable.activePivot();
         double length = this.cable.activeLength();
         double offY = player.height * 0.5D; // tether point is the body centre
@@ -178,7 +217,7 @@ public final class GrappleController
         if (dist <= 1.0E-4D || dist <= length) return; // slack rope: free movement
 
         double nx = dx / dist, ny = dy / dist, nz = dz / dist;
-        // Move the body centre back onto the sphere, then convert to a feet target.
+        // Clamp the body centre back onto the sphere (converted to a feet target).
         // Use moveEntity (not setPosition) so block collision is respected and the
         // pull can't drag the player into a wall when scaling it vertically.
         double targetX = p.xCoord + nx * length;
@@ -193,10 +232,15 @@ public final class GrappleController
             player.motionY -= ny * outward;
             player.motionZ -= nz * outward;
         }
-        player.onGround = false;
-        player.fallDistance = 0.0F;
 
-        applySwing(player, nx, ny, nz);
+        // Airborne: this is a swing. On the ground the rope simply caps how far the
+        // player can move (no swing pump, and don't disturb their grounded state).
+        if (!onGround)
+        {
+            player.onGround = false;
+            player.fallDistance = 0.0F;
+            applySwing(player, nx, ny, nz);
+        }
     }
 
     /** Add a tangential push from WASD so the player can pump and steer the swing. */
@@ -263,15 +307,7 @@ public final class GrappleController
     {
         if (jumpEdge)
         {
-            double hx = player.motionX, hz = player.motionZ;
-            double hlen = Math.sqrt(hx * hx + hz * hz);
-            if (hlen > 1.0E-4D)
-            {
-                player.motionX += hx / hlen * Tuning.JUMP_BOOST;
-                player.motionZ += hz / hlen * Tuning.JUMP_BOOST;
-            }
-            player.motionY += Tuning.JUMP_UP;
-            player.fallDistance = 0.0F;
+            launchBoost(player);
             endYank();
             return;
         }
@@ -289,6 +325,38 @@ public final class GrappleController
         this.yankTicks = 0;
     }
 
+    /** Is the rope at (near) full extension for the active span? */
+    private boolean isTaut(EntityPlayer player)
+    {
+        double activeDist = CableModel.dist(tetherPoint(player), this.cable.activePivot());
+        return activeDist >= this.cable.activeLength() - Tuning.TAUT_EPSILON;
+    }
+
+    /** Jump off a taut swing: launch with a boost and disconnect the hook. */
+    private void swingJump(EntityPlayer player)
+    {
+        launchBoost(player);
+        primeHeldHookLocally(player);
+        ModNetwork.CHANNEL.sendToServer(new MsgRelease());
+        this.suppressedHookId = this.hook.getEntityId();
+        this.hook.renderPivots = null;
+        this.stuckInitialized = false;
+    }
+
+    /** Add momentum along the current heading plus an upward pop. */
+    private void launchBoost(EntityPlayer player)
+    {
+        double hx = player.motionX, hz = player.motionZ;
+        double hlen = Math.sqrt(hx * hx + hz * hz);
+        if (hlen > 1.0E-4D)
+        {
+            player.motionX += hx / hlen * Tuning.JUMP_BOOST;
+            player.motionZ += hz / hlen * Tuning.JUMP_BOOST;
+        }
+        player.motionY += Tuning.JUMP_UP;
+        player.fallDistance = 0.0F;
+    }
+
     private static void primeHeldHookLocally(EntityPlayer player)
     {
         ItemStack held = player.getCurrentEquippedItem();
@@ -297,6 +365,34 @@ public final class GrappleController
         {
             held.setItemDamage(ItemGrapplingHook.META_PRIMED);
         }
+    }
+
+    /**
+     * Kick off the wall the player is pressed against: an away-from-wall + up
+     * impulse. The cable stays attached, so the constraint turns this into an arc
+     * around the fulcrum (the up component slackens the rope so the arc is free).
+     */
+    private void wallJump(EntityPlayer player)
+    {
+        Vec3 fulcrum = this.cable.activePivot();
+        // Away from the wall = horizontal offset from the anchor (which sits on the
+        // wall face) to the player (who stands just in front of it).
+        double ax = player.posX - fulcrum.xCoord;
+        double az = player.posZ - fulcrum.zCoord;
+        double ah = Math.sqrt(ax * ax + az * az);
+        if (ah < 0.05D)
+        {
+            // Directly under the anchor: fall back to "behind where the player faces".
+            double yaw = Math.toRadians(player.rotationYaw);
+            ax = Math.sin(yaw);
+            az = -Math.cos(yaw);
+            ah = 1.0D;
+        }
+        player.motionX = ax / ah * Tuning.WALL_JUMP_H;
+        player.motionZ = az / ah * Tuning.WALL_JUMP_H;
+        player.motionY = Tuning.WALL_JUMP_UP;
+        player.onGround = false;
+        player.fallDistance = 0.0F;
     }
 
     private void reset()
