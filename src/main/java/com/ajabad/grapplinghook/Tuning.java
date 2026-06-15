@@ -10,7 +10,7 @@ public final class Tuning
 {
     // --- Flight (mirrors a fully-charged bow arrow) -------------------------
     /** Launch speed of the fired hook. Full-charge bow == 2.0 * 1.5 == 3.0. */
-    public static final double LAUNCH_SPEED = 3.0D;
+    public static final double LAUNCH_SPEED = 4.5D;
     /** Per-tick gravity applied to the hook in flight (vanilla arrow == 0.05). */
     public static final double ARROW_GRAVITY = 0.05D;
     /** Per-tick horizontal/vertical drag in flight (vanilla arrow == 0.99). */
@@ -46,13 +46,13 @@ public final class Tuning
 
     // --- Yank (left-click while stuck) --------------------------------------
     /** Yank speed per block of cable length (force grows with the cable). */
-    public static final double YANK_K = 0.12D;
+    public static final double YANK_K = 0.14D;
     /** Upper bound on yank speed regardless of cable length. */
-    public static final double YANK_MAX_SPEED = 4.0D;
+    public static final double YANK_MAX_SPEED = 4D;
     /** How long (ticks) after a yank the jump-launch remains available. */
     public static final int YANK_FLIGHT_TICKS = 40;
     /** Blocks the yank aims above the anchor, to arc over lips and obstacles. */
-    public static final double YANK_RISE = 2D;
+    public static final double YANK_RISE = 2.5D;
 
     // --- Retract (left-click while flying) ----------------------------------
     /** Blocks/tick the hook flies back toward the hand. */
@@ -68,7 +68,7 @@ public final class Tuning
 
     // --- Wall jump (jump while tethered against a wall) ----------------------
     /** Horizontal away-from-wall impulse; tuned to clear ~1.5 blocks. */
-    public static final double WALL_JUMP_H = 0.6D;
+    public static final double WALL_JUMP_H = 0.5D;
     /** Upward impulse of a wall jump. */
     public static final double WALL_JUMP_UP = 0.5D;
 
@@ -78,7 +78,7 @@ public final class Tuning
     /** FoV-multiplier bonus from a full-force yank (scales with yank speed). */
     public static final double FOV_PUNCH_MAX = 0.5D;
     /** Per-tick decay of the yank FoV punch back to zero. */
-    public static final double FOV_PUNCH_DECAY = 0.88D;
+    public static final double FOV_PUNCH_DECAY = 0.33D;
 
     // --- Rendering ----------------------------------------------------------
     /** Half-thickness of the drawn cord, in blocks. */

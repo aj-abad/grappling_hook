@@ -8,3 +8,4 @@ item.grappling_hook.name=Grappling Hook
 
 key.categories.grapplinghook=Grappling Hook
 key.grapplinghook.extend=Extend Cable
+key.grapplinghook.disconnect=Disconnect Hook

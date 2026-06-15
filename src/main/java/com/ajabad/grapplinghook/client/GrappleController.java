@@ -45,6 +45,7 @@ public final class GrappleController
     private boolean stuckInitialized;
     private boolean prevJumpDown;
     private boolean prevOnGround;
+    private boolean prevDisconnectDown;
     private int suppressedHookId = -1; // a released hook awaiting despawn
 
     // Yank flight: after a left-click yank the hook is gone and the player is
@@ -72,6 +73,13 @@ public final class GrappleController
         boolean midAir = !player.onGround && !this.prevOnGround;
         this.prevOnGround = player.onGround;
 
+        // Disconnect on a fresh key press (tracked every tick so holding the key
+        // before firing doesn't instantly drop the new hook).
+        boolean disconnectDown = mc.inGameHasFocus
+                && Keyboard.isKeyDown(ModKeys.DISCONNECT.getKeyCode());
+        boolean disconnectEdge = disconnectDown && !this.prevDisconnectDown;
+        this.prevDisconnectDown = disconnectDown;
+
         // Yank flight: the hook is already gone; the only special input left is the
         // jump-launch. Firing a fresh hook cancels the flight so the new grapple
         // takes over at once.
@@ -93,6 +101,14 @@ public final class GrappleController
         if (this.hook.getEntityId() == this.suppressedHookId)
         {
             this.hook.renderPivots = null;
+            return;
+        }
+
+        // Clean instant drop (no added momentum), in any state — good for stepping
+        // off onto a ledge while scaling a wall.
+        if (disconnectEdge)
+        {
+            disconnect(player);
             return;
         }
 
@@ -204,14 +220,15 @@ public final class GrappleController
     {
         if (this.cable.cableLength >= Tuning.MAX_CABLE_LENGTH) return;
 
-        boolean wasTaut = isTaut(player);
+        // Only rappel (actively pay the player out) while hanging taut in the air
+        // under gravity — not on the ground, and not while creative-flying (a flying
+        // player shouldn't be rope-driven). Otherwise just bank the extra length as
+        // slack instead of shoving the player away from the anchor.
+        boolean rappel = isTaut(player) && !player.onGround && !player.capabilities.isFlying;
         this.cable.cableLength = Math.min(Tuning.MAX_CABLE_LENGTH,
                 this.cable.cableLength + Tuning.EXTEND_SPEED);
-        if (!wasTaut) return; // slack rope: just bank the extra length
+        if (!rappel) return;
 
-        // Taut: actively pay the player out onto the new, larger sphere and damp the
-        // outward velocity, so the descent is a smooth fixed rate (mirrors reel-in,
-        // which the constraint pulls inward; the constraint never pushes outward).
         Vec3 p = this.cable.activePivot();
         double offY = player.height * 0.5D;
         double dx = player.posX - p.xCoord;
@@ -221,6 +238,14 @@ public final class GrappleController
         if (dist < 1.0E-4D) return;
 
         double nx = dx / dist, ny = dy / dist, nz = dz / dist;
+
+        // Only pay out when it actually lowers the player (the rope points downward).
+        // If they're at or above the anchor, don't shove them up/out — leave the slack.
+        if (ny >= 0.0D) return;
+
+        // Pay the player out onto the new, larger sphere and damp the outward velocity
+        // so the descent is a smooth fixed rate (mirrors reel-in, which the constraint
+        // pulls inward; the constraint itself never pushes outward).
         double length = this.cable.activeLength();
         player.moveEntity(p.xCoord + nx * length - player.posX,
                 p.yCoord + ny * length - offY - player.posY,
@@ -370,6 +395,16 @@ public final class GrappleController
     private void swingJump(EntityPlayer player)
     {
         launchBoost(player);
+        primeHeldHookLocally(player);
+        ModNetwork.CHANNEL.sendToServer(new MsgRelease());
+        this.suppressedHookId = this.hook.getEntityId();
+        this.hook.renderPivots = null;
+        this.stuckInitialized = false;
+    }
+
+    /** Drop the hook immediately, leaving the player's momentum untouched. */
+    private void disconnect(EntityPlayer player)
+    {
         primeHeldHookLocally(player);
         ModNetwork.CHANNEL.sendToServer(new MsgRelease());
         this.suppressedHookId = this.hook.getEntityId();

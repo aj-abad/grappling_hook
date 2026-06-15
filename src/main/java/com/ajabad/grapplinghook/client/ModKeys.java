@@ -20,9 +20,14 @@ public final class ModKeys
     public static final KeyBinding EXTEND = new KeyBinding(
             "key.grapplinghook.extend", Keyboard.KEY_LCONTROL, "key.categories.grapplinghook");
 
+    /** Tap to instantly drop the hook with no added momentum (default Left Shift). */
+    public static final KeyBinding DISCONNECT = new KeyBinding(
+            "key.grapplinghook.disconnect", Keyboard.KEY_LSHIFT, "key.categories.grapplinghook");
+
     public static void register()
     {
         ClientRegistry.registerKeyBinding(EXTEND);
+        ClientRegistry.registerKeyBinding(DISCONNECT);
     }
 
     private ModKeys() {}
