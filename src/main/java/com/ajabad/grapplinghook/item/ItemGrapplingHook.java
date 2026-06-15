@@ -46,6 +46,7 @@ public class ItemGrapplingHook extends Item
         setMaxStackSize(1);
         setHasSubtypes(true); // metadata is state, not a damage/durability bar
         setCreativeTab(CreativeTabs.tabTools);
+        setFull3D(); // held as an angled 3D item (like the bow/tools), not a flat sprite
     }
 
     @Override

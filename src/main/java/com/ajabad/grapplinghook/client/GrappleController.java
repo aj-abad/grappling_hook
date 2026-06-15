@@ -279,12 +279,13 @@ public final class GrappleController
         Vec3 p = this.cable.activePivot();
         Vec3 tp = tetherPoint(player);
         double dx = p.xCoord - tp.xCoord;
-        double dy = p.yCoord - tp.yCoord;
+        // Aim a little above the anchor so the player arcs up and over lips/ledges.
+        double dy = (p.yCoord + Tuning.YANK_RISE) - tp.yCoord;
         double dz = p.zCoord - tp.zCoord;
         double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (dist < 1.0E-4D) return;
 
-        // Velocity points straight at the anchor; force scales with cable length.
+        // Velocity points at the (raised) anchor; force scales with cable length.
         double speed = Math.min(Tuning.YANK_K * this.cable.cableLength, Tuning.YANK_MAX_SPEED);
         player.motionX = dx / dist * speed;
         player.motionY = dy / dist * speed;

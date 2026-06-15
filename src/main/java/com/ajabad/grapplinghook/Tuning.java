@@ -49,6 +49,8 @@ public final class Tuning
     public static final double YANK_MAX_SPEED = 4.0D;
     /** How long (ticks) after a yank the jump-launch remains available. */
     public static final int YANK_FLIGHT_TICKS = 40;
+    /** Blocks the yank aims above the anchor, to arc over lips and obstacles. */
+    public static final double YANK_RISE = 2D;
 
     // --- Retract (left-click while flying) ----------------------------------
     /** Blocks/tick the hook flies back toward the hand. */
