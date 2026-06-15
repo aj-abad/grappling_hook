@@ -104,6 +104,8 @@ public final class Tuning
     public static final double CORD_FLIGHT_SAG = 0.06D;
     /** Maximum droop depth in blocks, so long/slack spans don't sag absurdly. */
     public static final double CORD_SAG_MAX = 2.5D;
+    /** How far above a block's surface the resting cord floats, in blocks. */
+    public static final double CORD_GROUND_CLEARANCE = 0.06D;
 
     private Tuning() {}
 }

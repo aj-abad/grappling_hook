@@ -15,6 +15,7 @@ import cpw.mods.fml.relauncher.SideOnly;
 import net.minecraft.client.Minecraft;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
+import net.minecraft.util.AxisAlignedBB;
 import net.minecraft.util.Vec3;
 
 import org.lwjgl.input.Keyboard;
@@ -76,7 +77,7 @@ public final class GrappleController
         // Disconnect on a fresh key press (tracked every tick so holding the key
         // before firing doesn't instantly drop the new hook).
         boolean disconnectDown = mc.inGameHasFocus
-                && Keyboard.isKeyDown(ModKeys.DISCONNECT.getKeyCode());
+                && Keyboard.isKeyDown(ModKeys.DISCONNECT_KEY);
         boolean disconnectEdge = disconnectDown && !this.prevDisconnectDown;
         this.prevDisconnectDown = disconnectDown;
 
@@ -122,20 +123,19 @@ public final class GrappleController
         ensureStuckCable(player);
 
         // Jump handling (mid-air only). The player's facing disambiguates intent:
-        // looking at the wall the anchor sits on => wall jump (kick off it, cable
-        // stays attached); looking away while actually swinging => swing jump (release
-        // with a boost). A jump in between does nothing -- use the Disconnect key to
-        // drop a taut, motionless rope.
+        // looking into any adjacent wall -- in a corner, either of them, not just the
+        // anchor's -- => wall jump, kicking off that wall with the cable still
+        // attached; looking away while actually swinging => swing jump (release with a
+        // boost). A jump in between does nothing -- use the Disconnect key to drop a
+        // taut, motionless rope.
         boolean wallJumped = false;
         if (jumpEdge && midAir)
         {
-            if (isFacingWall(player))
+            double[] wallNormal = facedWallNormal(player);
+            if (wallNormal != null)
             {
-                if (player.isCollidedHorizontally)
-                {
-                    wallJump(player); // arc off the wall, cable stays attached
-                    wallJumped = true;
-                }
+                wallJump(player, wallNormal[0], wallNormal[1]); // kick off the faced wall
+                wallJumped = true;
             }
             else if (isTaut(player) && swingSpeed(player) >= Tuning.SWING_JUMP_MIN_SPEED)
             {
@@ -403,26 +403,44 @@ public final class GrappleController
     }
 
     /**
-     * Is the player looking roughly at the wall the anchor sits on? Compares the
-     * horizontal look direction against the horizontal direction to the active pivot
-     * (which points into the wall when scaling one). Used to tell a wall jump apart
-     * from a swing jump.
+     * The outward normal {nx, nz} of the solid wall the player is looking into, or
+     * null if they aren't facing an adjacent wall. Probes all four cardinal
+     * directions so that in a corner the player can kick off whichever wall they
+     * face -- not only the one the anchor sits on. When more than one qualifies
+     * (looking straight into the corner) the most directly-faced wall wins.
      */
-    private boolean isFacingWall(EntityPlayer player)
+    private double[] facedWallNormal(EntityPlayer player)
     {
-        Vec3 p = this.cable.activePivot();
-        double toX = p.xCoord - player.posX;
-        double toZ = p.zCoord - player.posZ;
-        double toLen = Math.sqrt(toX * toX + toZ * toZ);
-        if (toLen < 1.0E-4D) return false; // anchor directly above/below: no wall dir
-        toX /= toLen; toZ /= toLen;
-
         // Horizontal forward look (matches the moveFlying decomposition in applySwing).
         double yaw = Math.toRadians(player.rotationYaw);
         double lookX = -Math.sin(yaw);
         double lookZ = Math.cos(yaw);
 
-        return lookX * toX + lookZ * toZ >= Tuning.WALL_JUMP_FACING_DOT;
+        int[][] inward = { {1, 0}, {-1, 0}, {0, 1}, {0, -1} };
+        double bestDot = Tuning.WALL_JUMP_FACING_DOT;
+        double outX = 0.0D, outZ = 0.0D;
+        boolean found = false;
+        for (int[] d : inward)
+        {
+            double dot = lookX * d[0] + lookZ * d[1];
+            if (dot < bestDot) continue;                     // not looking into this wall
+            if (!wallAdjacent(player, d[0], d[1])) continue; // no solid block there
+            bestDot = dot;
+            outX = -d[0]; outZ = -d[1];                      // push points away from it
+            found = true;
+        }
+        return found ? new double[] {outX, outZ} : null;
+    }
+
+    /** True if a solid block sits just past the player's box in the (dx,dz) direction. */
+    private boolean wallAdjacent(EntityPlayer player, double dx, double dz)
+    {
+        // Probe a third of a block past the box edge so a wall the player is pressed
+        // against (or held just shy of by the rope) registers. func_147461_a returns
+        // only block collision boxes, so a passing entity can't be wall-jumped off.
+        double probe = 0.3D;
+        AxisAlignedBB box = player.boundingBox.getOffsetBoundingBox(dx * probe, 0.0D, dz * probe);
+        return !player.worldObj.func_147461_a(box).isEmpty();
     }
 
     /** The player's speed tangential to the rope -- i.e. how fast they're swinging. */
@@ -490,28 +508,15 @@ public final class GrappleController
     }
 
     /**
-     * Kick off the wall the player is pressed against: an away-from-wall + up
-     * impulse. The cable stays attached, so the constraint turns this into an arc
-     * around the fulcrum (the up component slackens the rope so the arc is free).
+     * Kick off the faced wall along its outward normal (nx, nz): an away-from-wall +
+     * up impulse. The cable stays attached, so the constraint turns this into an arc
+     * around the fulcrum (the up component slackens the rope so the arc is free). The
+     * normal is a unit cardinal vector, so it needs no scaling.
      */
-    private void wallJump(EntityPlayer player)
+    private void wallJump(EntityPlayer player, double nx, double nz)
     {
-        Vec3 fulcrum = this.cable.activePivot();
-        // Away from the wall = horizontal offset from the anchor (which sits on the
-        // wall face) to the player (who stands just in front of it).
-        double ax = player.posX - fulcrum.xCoord;
-        double az = player.posZ - fulcrum.zCoord;
-        double ah = Math.sqrt(ax * ax + az * az);
-        if (ah < 0.05D)
-        {
-            // Directly under the anchor: fall back to "behind where the player faces".
-            double yaw = Math.toRadians(player.rotationYaw);
-            ax = Math.sin(yaw);
-            az = -Math.cos(yaw);
-            ah = 1.0D;
-        }
-        player.motionX = ax / ah * Tuning.WALL_JUMP_H;
-        player.motionZ = az / ah * Tuning.WALL_JUMP_H;
+        player.motionX = nx * Tuning.WALL_JUMP_H;
+        player.motionZ = nz * Tuning.WALL_JUMP_H;
         player.motionY = Tuning.WALL_JUMP_UP;
         player.onGround = false;
         player.fallDistance = 0.0F;

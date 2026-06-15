@@ -6,6 +6,7 @@ import java.util.List;
 import com.ajabad.grapplinghook.Reference;
 import com.ajabad.grapplinghook.Tuning;
 import com.ajabad.grapplinghook.entity.EntityGrapplingHook;
+import com.ajabad.grapplinghook.util.BlockGeometry;
 
 import cpw.mods.fml.relauncher.Side;
 import cpw.mods.fml.relauncher.SideOnly;
@@ -18,6 +19,7 @@ import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.util.MathHelper;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.Vec3;
+import net.minecraft.world.World;
 
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
@@ -35,6 +37,9 @@ public class RenderGrapplingHook extends Render
 {
     private static final ResourceLocation ARROW_TEX =
             new ResourceLocation(Reference.MODID, "textures/items/arrows.png");
+
+    /** How far below a cord point to look for a floor to rest it on, in blocks. */
+    private static final int FLOOR_SCAN_DEPTH = 4;
 
     @Override
     public void doRender(Entity entity, double x, double y, double z, float yaw, float partial)
@@ -136,7 +141,8 @@ public class RenderGrapplingHook extends Render
         // Subdivide each span and droop it: the anchored active span sags by its
         // slack (taut => straight line), an in-flight cord gets a small loose droop.
         boolean tethered = pivots != null && !pivots.isEmpty();
-        List<double[]> curve = saggedCurve(pts, tethered, hook.renderSlack);
+        double offX = eiwX - x, offY = eiwY - y, offZ = eiwZ - z;
+        List<double[]> curve = saggedCurve(pts, tethered, hook.renderSlack, owner.worldObj, offX, offY, offZ);
 
         Tessellator t = Tessellator.instance;
         GL11.glDisable(GL11.GL_TEXTURE_2D);
@@ -155,7 +161,8 @@ public class RenderGrapplingHook extends Render
     }
 
     /** Expand the coarse pivot points into a finer, drooping polyline. */
-    private List<double[]> saggedCurve(double[][] pts, boolean tethered, double slack)
+    private List<double[]> saggedCurve(double[][] pts, boolean tethered, double slack,
+            World world, double offX, double offY, double offZ)
     {
         List<double[]> curve = new ArrayList<double[]>();
         for (int i = 0; i + 1 < pts.length; ++i)
@@ -169,11 +176,33 @@ public class RenderGrapplingHook extends Render
             {
                 double s = (double) k / Tuning.CORD_SUBDIVISIONS;
                 double droop = sag * 4.0D * s * (1.0D - s); // 0 at the ends, max at the middle
-                curve.add(new double[] {a[0] + dx * s, a[1] + dy * s - droop, a[2] + dz * s});
+                double px = a[0] + dx * s;
+                double py = a[1] + dy * s - droop;
+                double pz = a[2] + dz * s;
+                // Only the drooping belly can dip into the floor; taut points sit on
+                // the straight chord between real pivots, so skip probing them.
+                if (droop > 0.0D) py = restOnFloor(world, px, py, pz, offX, offY, offZ);
+                curve.add(new double[] {px, py, pz});
             }
         }
         curve.add(pts[pts.length - 1]); // final endpoint
         return curve;
+    }
+
+    /**
+     * Lift a render-local cord point so it rests on the block surface beneath it
+     * rather than clipping through the floor. Purely cosmetic: converts to world
+     * space, probes the real (state-aware) surface height, and clamps back.
+     */
+    private double restOnFloor(World world, double localX, double localY, double localZ,
+            double offX, double offY, double offZ)
+    {
+        if (world == null) return localY;
+        double top = BlockGeometry.surfaceTopBelow(
+                world, localX + offX, localY + offY, localZ + offZ, FLOOR_SCAN_DEPTH);
+        if (Double.isNaN(top)) return localY;
+        double minLocalY = (top + Tuning.CORD_GROUND_CLEARANCE) - offY;
+        return localY < minLocalY ? minLocalY : localY;
     }
 
     /** Droop depth for one span. */

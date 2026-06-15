@@ -3,6 +3,8 @@ package com.ajabad.grapplinghook.client;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.ajabad.grapplinghook.util.BlockGeometry;
+
 import cpw.mods.fml.relauncher.Side;
 import cpw.mods.fml.relauncher.SideOnly;
 
@@ -27,6 +29,8 @@ public class CableModel
     private static final int MAX_PIVOTS = 24;
     /** Endpoint nudge (blocks) so rays don't self-hit the surface a pivot rests on. */
     private static final double NUDGE = 0.1D;
+    /** How far (blocks) a wrap corner is pushed off its surface along the hit face. */
+    private static final double WRAP_NUDGE = 0.05D;
 
     public final List<Vec3> pivots = new ArrayList<Vec3>();
     public double cableLength;
@@ -115,18 +119,23 @@ public class CableModel
     /**
      * The block corner the cord should bend around, or {@code null} if none is
      * usable. Found by tracing from the player toward the active pivot, snapping the
-     * first hit to the nearest block-grid corner, and nudging it out of the surface.
+     * first hit to the nearest corner of that block's true collision shape, and
+     * nudging it out of the surface.
      */
     private Vec3 findWrapCorner(World world, Vec3 active, Vec3 player)
     {
         MovingObjectPosition hit = traceNudged(world, player, active);
         if (hit == null || hit.hitVec == null) return null;
 
+        // Snap to the nearest corner of the block's true collision shape (so a
+        // slab/stair edge lands at the real half-block height, not the grid line),
+        // then nudge it just off the hit face so the cord clears the surface.
         double[] n = faceNormal(hit.sideHit);
+        Vec3 c = BlockGeometry.nearestShapeCorner(world, hit.blockX, hit.blockY, hit.blockZ, hit.hitVec);
         Vec3 corner = Vec3.createVectorHelper(
-                Math.round(hit.hitVec.xCoord) + n[0] * 0.05D,
-                Math.round(hit.hitVec.yCoord) + n[1] * 0.05D,
-                Math.round(hit.hitVec.zCoord) + n[2] * 0.05D);
+                c.xCoord + n[0] * WRAP_NUDGE,
+                c.yCoord + n[1] * WRAP_NUDGE,
+                c.zCoord + n[2] * WRAP_NUDGE);
 
         // Reject degenerate, duplicate, or unreachable corners.
         if (dist(corner, active) < 0.25D || dist(corner, player) < 0.25D) return null;
