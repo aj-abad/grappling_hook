@@ -6,8 +6,10 @@ import com.ajabad.grapplinghook.Tuning;
 import com.ajabad.grapplinghook.entity.EntityGrapplingHook;
 import com.ajabad.grapplinghook.item.ItemGrapplingHook;
 import com.ajabad.grapplinghook.network.ModNetwork;
+import com.ajabad.grapplinghook.network.MsgReel;
 import com.ajabad.grapplinghook.network.MsgRelease;
 import com.ajabad.grapplinghook.network.MsgRetract;
+import com.ajabad.grapplinghook.network.MsgYankMob;
 
 import cpw.mods.fml.relauncher.Side;
 import cpw.mods.fml.relauncher.SideOnly;
@@ -53,6 +55,11 @@ public final class GrappleController
     // sailing toward the anchor; during this window jump performs the launch.
     private boolean yanking;
     private int yankTicks;
+
+    // Latched-mob reel: the reel intent runs server-side, so we forward use-key
+    // edges as MsgReel. Keyed to the hook's id so a fresh latch re-syncs from "off".
+    private int reelHookId = -1;
+    private boolean reelSent;
 
     private GrappleController() {}
 
@@ -110,6 +117,17 @@ public final class GrappleController
         if (disconnectEdge)
         {
             disconnect(player);
+            return;
+        }
+
+        // Latched onto a mob: the drag/reel/yank physics are server-authoritative
+        // (they move another entity). Locally we only forward the reel intent and let
+        // the cord draw straight to the mob the hook is riding.
+        if (this.hook.getState() == EntityGrapplingHook.STATE_LATCHED)
+        {
+            forwardLatchReel(mc);
+            this.stuckInitialized = false;
+            this.hook.renderPivots = null;
             return;
         }
 
@@ -188,6 +206,31 @@ public final class GrappleController
             // (YANK_RISE) gives it enough lift to leave the ground.
             ensureStuckCable(player);
             yank(player);
+        }
+        else if (state == EntityGrapplingHook.STATE_LATCHED)
+        {
+            // Fling the latched mob toward us (server-side); the cable stays attached.
+            ModNetwork.CHANNEL.sendToServer(new MsgYankMob());
+        }
+    }
+
+    /**
+     * While latched, forward use-key press/release to the server as reel start/stop.
+     * Keyed to the current hook id so a brand-new latch always re-syncs from "off",
+     * even if the use key was already held when it formed.
+     */
+    private void forwardLatchReel(Minecraft mc)
+    {
+        if (this.reelHookId != this.hook.getEntityId())
+        {
+            this.reelHookId = this.hook.getEntityId();
+            this.reelSent = false; // the server's fresh hook starts not reeling
+        }
+        boolean useDown = mc.gameSettings.keyBindUseItem.getIsKeyPressed();
+        if (useDown != this.reelSent)
+        {
+            ModNetwork.CHANNEL.sendToServer(new MsgReel(useDown));
+            this.reelSent = useDown;
         }
     }
 
@@ -529,6 +572,8 @@ public final class GrappleController
         this.suppressedHookId = -1;
         this.yanking = false;
         this.yankTicks = 0;
+        this.reelHookId = -1;
+        this.reelSent = false;
         this.cable.pivots.clear();
     }
 }

@@ -41,6 +41,15 @@ public class RenderGrapplingHook extends Render
     /** How far below a cord point to look for a floor to rest it on, in blocks. */
     private static final int FLOOR_SCAN_DEPTH = 4;
 
+    /**
+     * Distance (blocks) from the entity origin back to the arrow's tail, where the
+     * cord ties on. The model's back edge is at x=-8; the renderArrow translate(-4)
+     * and scale put it (8 + 4) * 0.05625 blocks behind the origin. The head reaches
+     * only (8 - 4) * 0.05625 in front, which is why anchoring on the origin looked
+     * head-attached (and buried the cord in the block when stuck).
+     */
+    private static final double ARROW_TAIL_REACH = (8.0D + 4.0D) * 0.05625D;
+
     @Override
     public void doRender(Entity entity, double x, double y, double z, float yaw, float partial)
     {
@@ -58,13 +67,13 @@ public class RenderGrapplingHook extends Render
         GL11.glRotatef(hook.prevRotationPitch + (hook.rotationPitch - hook.prevRotationPitch) * partial, 0.0F, 0.0F, 1.0F);
         Tessellator t = Tessellator.instance;
 
-        // UVs into the hook texture (textures/items/arrows.png, 16x12 px). The arrow
-        // seen side-on is the top 16x7 block (the four "shaft" planes); the back-end
-        // cross-section is the 5x5 block directly below it, starting at y=7.
-        float shaftU0 = 0.0F,         shaftU1 = 16.0F / 16.0F;
-        float shaftV0 = 0.0F,         shaftV1 = 7.0F / 12.0F;
-        float backU0  = 0.0F,         backU1  = 5.0F / 16.0F;
-        float backV0  = 7.0F / 12.0F, backV1  = 12.0F / 12.0F;
+        // UVs into the hook texture (textures/items/arrows.png, 12x10 px). The arrow
+        // seen side-on is the top 12x7 block (the four "shaft" planes); the back-end
+        // cross-section is the 3x3 block directly below it, starting at y=7.
+        float shaftU0 = 0.0F,         shaftU1 = 12.0F / 12.0F;
+        float shaftV0 = 0.0F,         shaftV1 = 7.0F / 10.0F;
+        float backU0  = 0.0F,         backU1  = 3.0F / 12.0F;
+        float backV0  = 7.0F / 10.0F, backV1  = 10.0F / 10.0F;
 
         float scale = 0.05625F;
         GL11.glEnable(GL12.GL_RESCALE_NORMAL);
@@ -73,9 +82,9 @@ public class RenderGrapplingHook extends Render
         GL11.glTranslatef(-4.0F, 0.0F, 0.0F);
 
         // The flat cross-section capping the tail, drawn from both faces. It sits at
-        // x=-8 (the back edge of the shaft planes), not vanilla's -7: the arrow art
-        // runs the full 16px to that edge, so the square lines up with the feathers
-        // drawn on the shaft instead of floating 1px ahead of them.
+        // x=-8 (the back edge of the shaft planes), not vanilla's -7: the shaft art
+        // runs the full 12px to that edge, so the cap sits flush with the tail end of
+        // the shaft instead of floating 1px ahead of it.
         GL11.glNormal3f(scale, 0.0F, 0.0F);
         t.startDrawingQuads();
         t.addVertexWithUV(-8.0D, -2.0D, -2.0D, backU0, backV0);
@@ -118,18 +127,19 @@ public class RenderGrapplingHook extends Render
         double eiwY = hook.prevPosY + (hook.posY - hook.prevPosY) * partial;
         double eiwZ = hook.prevPosZ + (hook.posZ - hook.prevPosZ) * partial;
 
-        // Build the cord polyline in world space: hand -> (pivots, active first) -> anchor.
+        // Build the cord polyline in world space: hand -> (wrap pivots, active first)
+        // -> the hook's tail. The far end ties onto the arrow's back end, not the
+        // entity origin (which sits up by the head, and inside the block when stuck).
+        // pivots[0] is the anchor/impact point and coincides with that origin, so we
+        // drop it and substitute the tail; any other pivots are real wrap corners.
         List<Vec3> points = new ArrayList<Vec3>();
         points.add(getHandPos(owner, partial));
         List<Vec3> pivots = hook.renderPivots;
         if (pivots != null && !pivots.isEmpty())
         {
-            for (int i = pivots.size() - 1; i >= 0; --i) points.add(pivots.get(i));
+            for (int i = pivots.size() - 1; i >= 1; --i) points.add(pivots.get(i));
         }
-        else
-        {
-            points.add(Vec3.createVectorHelper(eiwX, eiwY, eiwZ));
-        }
+        points.add(tailAnchor(hook, eiwX, eiwY, eiwZ, partial));
 
         // Convert to render-local coordinates (relative to this entity's draw origin).
         double[][] pts = new double[points.size()][3];
@@ -308,6 +318,27 @@ public class RenderGrapplingHook extends Render
         int wy = MathHelper.floor_double(localPt[1] + offY);
         int wz = MathHelper.floor_double(localPt[2] + offZ);
         return world.getLightBrightnessForSkyBlocks(wx, wy, wz, 0);
+    }
+
+    /**
+     * World position of the hook's tail (the feathered back end) for this frame, where
+     * the cord ties on. Steps {@link #ARROW_TAIL_REACH} blocks back from the entity
+     * origin along the flight direction, rebuilt from the same interpolated yaw/pitch
+     * {@code renderArrow} rotates the model by, so the knot tracks the drawn arrow.
+     */
+    private Vec3 tailAnchor(EntityGrapplingHook hook, double eiwX, double eiwY, double eiwZ, float partial)
+    {
+        double yaw = Math.toRadians(hook.prevRotationYaw + (hook.rotationYaw - hook.prevRotationYaw) * partial);
+        double pitch = Math.toRadians(hook.prevRotationPitch + (hook.rotationPitch - hook.prevRotationPitch) * partial);
+        double cosP = Math.cos(pitch);
+        // Flight (head) direction; the tail is the opposite end, so subtract it.
+        double dirX = Math.sin(yaw) * cosP;
+        double dirY = Math.sin(pitch);
+        double dirZ = Math.cos(yaw) * cosP;
+        return Vec3.createVectorHelper(
+                eiwX - dirX * ARROW_TAIL_REACH,
+                eiwY - dirY * ARROW_TAIL_REACH,
+                eiwZ - dirZ * ARROW_TAIL_REACH);
     }
 
     /** World position of the held item's tip, ported from RenderFish. */

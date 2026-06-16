@@ -54,6 +54,30 @@ public final class Tuning
     /** Blocks the yank aims above the anchor, to arc over lips and obstacles. */
     public static final double YANK_RISE = 2.5D;
 
+    // --- Mob latch (hook strikes a living entity) ---------------------------
+    /** Impact damage dealt to a struck mob, in half-hearts (6.0 == 3 hearts). */
+    public static final float MOB_HIT_DAMAGE = 6.0F;
+    /**
+     * Mob-yank speed per block of straight player-to-mob cable (mirrors {@link #YANK_K},
+     * kept separate so the player-yank and mob-yank can be tuned independently).
+     */
+    public static final double MOB_YANK_K = 0.14D;
+    /** Upper bound on the mob-yank speed regardless of cable length (mirrors {@link #YANK_MAX_SPEED}). */
+    public static final double MOB_YANK_MAX_SPEED = 4.0D;
+    /** Blocks the mob-yank aims above the player, arcing the mob up over lips (mirrors {@link #YANK_RISE}). */
+    public static final double MOB_YANK_RISE = 2.5D;
+    /**
+     * Smallest fraction of a tick's demanded inward pull the dragged mob must actually
+     * cover; below this the mob is judged obstructed and the cable snaps. 0.25 == it
+     * must close at least a quarter of the gap, else terrain is holding it back.
+     */
+    public static final double MOB_DRAG_MIN_PROGRESS = 0.25D;
+    /**
+     * Minimum inward pull (blocks) a tick must demand before the snap check runs at all,
+     * so rope jitter while the mob sits at full extension never breaks the cable.
+     */
+    public static final double MOB_DRAG_MIN_PULL = 0.05D;
+
     // --- Retract (left-click while flying) ----------------------------------
     /** Blocks/tick the hook flies back toward the hand. */
     public static final double RETRACT_SPEED = 2.5D;

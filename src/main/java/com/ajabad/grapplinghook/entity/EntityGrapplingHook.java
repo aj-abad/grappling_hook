@@ -6,9 +6,12 @@ import com.ajabad.grapplinghook.Tuning;
 import com.ajabad.grapplinghook.item.ItemGrapplingHook;
 
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.util.AxisAlignedBB;
+import net.minecraft.util.DamageSource;
 import net.minecraft.util.MathHelper;
 import net.minecraft.util.MovingObjectPosition;
 import net.minecraft.util.Vec3;
@@ -28,14 +31,27 @@ public class EntityGrapplingHook extends Entity
     public static final byte STATE_FLYING = 0;
     public static final byte STATE_STUCK = 1;
     public static final byte STATE_RETRACTING = 2;
+    /** Hook bit into a living mob and is now a leash dragging it (see {@link #tickLatched}). */
+    public static final byte STATE_LATCHED = 3;
 
     private static final int DW_STATE = 16;
     private static final int DW_OWNER = 17;
     private static final int DW_ANCHOR_X = 18;
     private static final int DW_ANCHOR_Y = 19;
     private static final int DW_ANCHOR_Z = 20;
+    private static final int DW_TARGET = 21; // latched mob's entity id, or -1
 
     private int ticksInAir;
+
+    /**
+     * Server-side leash budget while {@link #STATE_LATCHED}: the mob is kept within
+     * this straight-line distance of the player, and holding the use key shrinks it.
+     * Not synced -- the latch physics are server-authoritative.
+     */
+    private double cableLength;
+
+    /** Server-side: the player is holding the use key to reel the latched mob in. */
+    private boolean reeling;
 
     /**
      * Client-only render data: the cord pivots from anchor (index 0) to the
@@ -108,6 +124,8 @@ public class EntityGrapplingHook extends Entity
         this.dataWatcher.addObject(DW_ANCHOR_X, Float.valueOf(0.0F));
         this.dataWatcher.addObject(DW_ANCHOR_Y, Float.valueOf(0.0F));
         this.dataWatcher.addObject(DW_ANCHOR_Z, Float.valueOf(0.0F));
+        // Synced so every client can hang the cord's far end on the mob locally.
+        this.dataWatcher.addObject(DW_TARGET, Integer.valueOf(-1));
     }
 
     public byte getState() { return this.dataWatcher.getWatchableObjectByte(DW_STATE); }
@@ -120,6 +138,20 @@ public class EntityGrapplingHook extends Entity
     {
         Entity e = this.worldObj.getEntityByID(getOwnerId());
         return (e instanceof EntityPlayer) ? (EntityPlayer) e : null;
+    }
+
+    public boolean isLatched() { return getState() == STATE_LATCHED; }
+
+    /** Server-side: set whether the player is reeling the latched mob in. */
+    public void setReeling(boolean reeling) { this.reeling = reeling; }
+
+    public int getTargetId() { return this.dataWatcher.getWatchableObjectInt(DW_TARGET); }
+
+    /** The mob this hook is latched onto, or {@code null}. Works on either side. */
+    public EntityLivingBase getTarget()
+    {
+        Entity e = this.worldObj.getEntityByID(getTargetId());
+        return (e instanceof EntityLivingBase) ? (EntityLivingBase) e : null;
     }
 
     /**
@@ -190,6 +222,9 @@ public class EntityGrapplingHook extends Entity
             case STATE_RETRACTING:
                 tickRetracting();
                 break;
+            case STATE_LATCHED:
+                tickLatched();
+                break;
             default:
                 break;
         }
@@ -217,6 +252,19 @@ public class EntityGrapplingHook extends Entity
         // BoundingBox=true (so grass/flowers/torches don't catch the hook mid-air),
         // returnLastUncollidableBlock=false.
         MovingObjectPosition hit = this.worldObj.func_147447_a(from, to, false, true, false);
+
+        // Scan for a mob along the same path, but only up to a block hit (so a mob
+        // standing behind a wall can't be grabbed through it). A mob beats the block.
+        Vec3 scanFrom = Vec3.createVectorHelper(this.posX, this.posY, this.posZ);
+        Vec3 scanTo = (hit != null)
+                ? Vec3.createVectorHelper(hit.hitVec.xCoord, hit.hitVec.yCoord, hit.hitVec.zCoord)
+                : Vec3.createVectorHelper(this.posX + this.motionX, this.posY + this.motionY, this.posZ + this.motionZ);
+        EntityLivingBase mob = findHitMob(scanFrom, scanTo);
+        if (mob != null)
+        {
+            onHitMob(mob);
+            return;
+        }
 
         if (hit != null)
         {
@@ -300,8 +348,203 @@ public class EntityGrapplingHook extends Entity
             this.posY += this.motionY;
             this.posZ += this.motionZ;
         }
-        updateRotationFromMotion();
+        // Aim the head away from the player so the hook reels in tail-first: the cord
+        // ties to the tail (see RenderGrapplingHook), so the tail should lead. dx,dy,dz
+        // point at the player, hence the negation. Also pulls a stuck hook straight out
+        // of its surface instead of flipping it around to dive head-first at the player.
+        updateRotationFromHeading(-dx, -dy, -dz);
         this.setPosition(this.posX, this.posY, this.posZ);
+    }
+
+    /**
+     * The closest mob whose (slightly expanded) box the segment {@code from -> to}
+     * passes through, excluding the owner and other players, or {@code null}. Mirrors
+     * the entity scan a vanilla arrow does, restricted to draggable living mobs.
+     */
+    private EntityLivingBase findHitMob(Vec3 from, Vec3 to)
+    {
+        EntityPlayer owner = getOwner();
+        AxisAlignedBB sweep = this.boundingBox.addCoord(this.motionX, this.motionY, this.motionZ).expand(1.0D, 1.0D, 1.0D);
+        List list = this.worldObj.getEntitiesWithinAABBExcludingEntity(this, sweep);
+
+        EntityLivingBase best = null;
+        double bestDist = 0.0D;
+        for (int i = 0; i < list.size(); ++i)
+        {
+            Object o = list.get(i);
+            if (!(o instanceof EntityLivingBase)) continue;     // only living mobs latch
+            EntityLivingBase e = (EntityLivingBase) o;
+            if (e == owner || e instanceof EntityPlayer) continue; // not the shooter, not players
+            if (!e.canBeCollidedWith()) continue;
+
+            AxisAlignedBB box = e.boundingBox.expand(0.3D, 0.3D, 0.3D);
+            MovingObjectPosition m = box.calculateIntercept(from, to);
+            if (m == null) continue;
+            double d = from.distanceTo(m.hitVec);
+            if (best == null || d < bestDist) { best = e; bestDist = d; }
+        }
+        return best;
+    }
+
+    /**
+     * The hook struck a mob: stop it on both sides; the server then deals the impact
+     * damage and either latches (mob survived) or resets like a miss (mob died).
+     */
+    private void onHitMob(EntityLivingBase mob)
+    {
+        this.motionX = this.motionY = this.motionZ = 0.0D;
+        if (this.worldObj.isRemote) return; // damage & state are server-authoritative
+
+        EntityPlayer owner = getOwner();
+        if (owner == null) { this.setDead(); return; }
+
+        mob.attackEntityFrom(DamageSource.causeThrownDamage(this, owner), Tuning.MOB_HIT_DAMAGE);
+
+        if (!mob.isEntityAlive())
+        {
+            // The hit killed it; nothing left to latch onto, so reset to primed.
+            resetOwnerStack(owner);
+            this.setDead();
+            return;
+        }
+
+        // Latch: leash length is the current straight player->mob gap plus a little slack.
+        double mobCenterY = mob.posY + mob.height * 0.5D;
+        double dx = mob.posX - owner.posX;
+        double dy = mobCenterY - (owner.posY + owner.height * 0.5D);
+        double dz = mob.posZ - owner.posZ;
+        this.cableLength = Math.sqrt(dx * dx + dy * dy + dz * dz) + Tuning.LEEWAY;
+        this.reeling = false;
+        this.dataWatcher.updateObject(DW_TARGET, Integer.valueOf(mob.getEntityId()));
+        this.setPosition(mob.posX, mobCenterY, mob.posZ);
+        setState(STATE_LATCHED);
+        this.playSound("random.bowhit", 0.6F, 1.0F / (this.rand.nextFloat() * 0.2F + 0.9F));
+    }
+
+    /**
+     * Drag the latched mob: keep it within {@link #cableLength} of the player, reel
+     * that length in while the use key is held, and snap the cable (reset to primed)
+     * if terrain stops the mob from being pulled toward the player. The hook entity
+     * rides the mob so the rendered cord ends on it.
+     */
+    private void tickLatched()
+    {
+        this.motionX = this.motionY = this.motionZ = 0.0D;
+
+        EntityLivingBase mob = getTarget();
+        if (mob == null || !mob.isEntityAlive())
+        {
+            // Target died or unloaded. Server tears down; clients await the sync.
+            if (!this.worldObj.isRemote) breakCable();
+            return;
+        }
+
+        if (this.worldObj.isRemote)
+        {
+            // Hang the cord's far end on the mob without waiting on tracking lag.
+            this.setPosition(mob.posX, mob.posY + mob.height * 0.5D, mob.posZ);
+            return;
+        }
+
+        EntityPlayer owner = getOwner();
+        if (owner == null) { breakCable(); return; }
+
+        // Hold use to reel the mob in, down to the floor length.
+        if (this.reeling)
+        {
+            this.cableLength = Math.max(Tuning.MIN_ACTIVE_LENGTH, this.cableLength - Tuning.REEL_SPEED);
+        }
+
+        // Tether point on the player (body centre, matching the swing tether).
+        double tx = owner.posX;
+        double ty = owner.posY + owner.height * 0.5D;
+        double tz = owner.posZ;
+        double offY = mob.height * 0.5D;
+
+        double dx = mob.posX - tx;
+        double dy = (mob.posY + offY) - ty;
+        double dz = mob.posZ - tz;
+        double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+        double need = dist - this.cableLength;
+        if (need > 0.0D && dist > 1.0E-4D)
+        {
+            // Pull the mob back onto the leash sphere, respecting block collision.
+            double nx = dx / dist, ny = dy / dist, nz = dz / dist;
+            double targetX = tx + nx * this.cableLength;
+            double targetY = ty + ny * this.cableLength - offY;
+            double targetZ = tz + nz * this.cableLength;
+            mob.moveEntity(targetX - mob.posX, targetY - mob.posY, targetZ - mob.posZ);
+            mob.velocityChanged = true;
+
+            // Strip the outward velocity so the mob settles on the sphere instead of
+            // straining against it (mirrors the player swing constraint).
+            double outward = mob.motionX * nx + mob.motionY * ny + mob.motionZ * nz;
+            if (outward > 0.0D)
+            {
+                mob.motionX -= nx * outward;
+                mob.motionY -= ny * outward;
+                mob.motionZ -= nz * outward;
+            }
+
+            // Obstruction snap: the pull demanded real inward travel, but if terrain
+            // held the mob (it closed almost none of the gap) the cable breaks.
+            double ndx = mob.posX - tx;
+            double ndy = (mob.posY + offY) - ty;
+            double ndz = mob.posZ - tz;
+            double progress = dist - Math.sqrt(ndx * ndx + ndy * ndy + ndz * ndz);
+            if (need >= Tuning.MOB_DRAG_MIN_PULL && progress < need * Tuning.MOB_DRAG_MIN_PROGRESS)
+            {
+                breakCable();
+                return;
+            }
+        }
+
+        this.setPosition(mob.posX, mob.posY + offY, mob.posZ);
+    }
+
+    /**
+     * Fling the latched mob toward the player, mirroring the player-to-hook yank: the
+     * aim is raised by {@link Tuning#MOB_YANK_RISE} and the speed scales with the
+     * straight player-to-mob distance. The latch stays attached.
+     */
+    public void yankTarget()
+    {
+        if (this.worldObj.isRemote) return;
+        EntityLivingBase mob = getTarget();
+        EntityPlayer owner = getOwner();
+        if (mob == null || owner == null || !mob.isEntityAlive()) return;
+
+        double tx = owner.posX;
+        double ty = owner.posY + owner.height * 0.5D;
+        double tz = owner.posZ;
+        double mobCenterY = mob.posY + mob.height * 0.5D;
+
+        // Force scales with the straight player->mob gap (no wrapping while latched).
+        double rdx = tx - mob.posX, rdy = ty - mobCenterY, rdz = tz - mob.posZ;
+        double realDist = Math.sqrt(rdx * rdx + rdy * rdy + rdz * rdz);
+
+        // Aim a little above the player so the mob arcs up and over lips/ledges.
+        double ax = tx - mob.posX;
+        double ay = (ty + Tuning.MOB_YANK_RISE) - mobCenterY;
+        double az = tz - mob.posZ;
+        double aLen = Math.sqrt(ax * ax + ay * ay + az * az);
+        if (aLen < 1.0E-4D) return;
+
+        double speed = Math.min(Tuning.MOB_YANK_K * realDist, Tuning.MOB_YANK_MAX_SPEED);
+        mob.motionX = ax / aLen * speed;
+        mob.motionY = ay / aLen * speed;
+        mob.motionZ = az / aLen * speed;
+        mob.velocityChanged = true;
+        mob.fallDistance = 0.0F;
+    }
+
+    /** Snap the cable: reset the owner's stack to primed and remove the hook (server). */
+    private void breakCable()
+    {
+        resetOwnerStack(getOwner());
+        this.playSound("random.break", 0.7F, 0.8F + this.rand.nextFloat() * 0.4F);
+        this.setDead();
     }
 
     /** Reset the owner's fired hook back to its primed state, if it still exists. */
@@ -322,9 +565,15 @@ public class EntityGrapplingHook extends Entity
 
     private void updateRotationFromMotion()
     {
-        float horiz = MathHelper.sqrt_double(this.motionX * this.motionX + this.motionZ * this.motionZ);
-        this.rotationYaw = (float) (Math.atan2(this.motionX, this.motionZ) * 180.0D / Math.PI);
-        this.rotationPitch = (float) (Math.atan2(this.motionY, horiz) * 180.0D / Math.PI);
+        updateRotationFromHeading(this.motionX, this.motionY, this.motionZ);
+    }
+
+    /** Aim the rendered arrow's head along the given heading vector. */
+    private void updateRotationFromHeading(double x, double y, double z)
+    {
+        float horiz = MathHelper.sqrt_double(x * x + z * z);
+        this.rotationYaw = (float) (Math.atan2(x, z) * 180.0D / Math.PI);
+        this.rotationPitch = (float) (Math.atan2(y, horiz) * 180.0D / Math.PI);
     }
 
     @Override
