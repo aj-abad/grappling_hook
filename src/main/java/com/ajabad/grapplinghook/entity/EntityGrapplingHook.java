@@ -5,6 +5,7 @@ import java.util.List;
 import com.ajabad.grapplinghook.Tuning;
 import com.ajabad.grapplinghook.item.ItemGrapplingHook;
 
+import net.minecraft.block.Block;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.player.EntityPlayer;
@@ -304,7 +305,11 @@ public class EntityGrapplingHook extends Entity
                 this.dataWatcher.updateObject(DW_ANCHOR_Y, Float.valueOf((float) this.posY));
                 this.dataWatcher.updateObject(DW_ANCHOR_Z, Float.valueOf((float) this.posZ));
                 setState(STATE_STUCK);
-                this.playSound("random.bowhit", 0.6F, 1.0F / (this.rand.nextFloat() * 0.2F + 0.9F));
+                // Latch with the bite of the block cracking: play that block's break
+                // sound at vanilla's break volume/pitch (see RenderGlobal case 2001).
+                Block.SoundType anchorSound = this.worldObj.getBlock(hit.blockX, hit.blockY, hit.blockZ).stepSound;
+                this.playSound(anchorSound.getBreakSound(),
+                        (anchorSound.getVolume() + 1.0F) / 2.0F, anchorSound.getPitch() * 0.8F);
             }
             return;
         }

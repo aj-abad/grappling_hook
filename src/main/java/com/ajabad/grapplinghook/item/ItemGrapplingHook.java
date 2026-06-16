@@ -23,10 +23,9 @@ import net.minecraft.world.World;
  *   <li>{@link #META_FIRED}  (1) &mdash; already launched, renders {@code hookFired.png}.</li>
  * </ul>
  *
- * <p>Right-clicking plays the exact sound vanilla uses when an egg/snowball is
- * thrown ({@code random.bow} with a randomized pitch; see {@code ItemEgg
- * #onItemRightClick}) and flips the stack from primed to fired, which swaps the
- * rendered icon.
+ * <p>Right-clicking plays the mod's launch sound ({@code grapplinghook:fire}, a
+ * firework-blast crack with a randomized pitch) and flips the stack from primed
+ * to fired, which swaps the rendered icon.
  */
 public class ItemGrapplingHook extends Item
 {
@@ -57,9 +56,10 @@ public class ItemGrapplingHook extends Item
         // from the use key (see GrappleController), not from this once-per-press hook.
         if (stack.getItemDamage() == META_PRIMED)
         {
-            // Vanilla bow-release sound, randomized like an egg/snowball throw.
-            world.playSoundAtEntity(player, "random.bow", 0.5F,
-                    0.4F / (itemRand.nextFloat() * 0.4F + 0.8F));
+            // Mod launch sound (assets/grapplinghook/sounds/fire.ogg via sounds.json),
+            // lightly pitch-randomized so repeated fires don't sound identical.
+            world.playSoundAtEntity(player, Reference.MODID + ":fire", 1.0F,
+                    1.0F / (itemRand.nextFloat() * 0.2F + 0.9F));
 
             if (!world.isRemote)
             {

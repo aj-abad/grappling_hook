@@ -43,12 +43,13 @@ public class RenderGrapplingHook extends Render
 
     /**
      * Distance (blocks) from the entity origin back to the arrow's tail, where the
-     * cord ties on. The model's back edge is at x=-8; the renderArrow translate(-4)
-     * and scale put it (8 + 4) * 0.05625 blocks behind the origin. The head reaches
-     * only (8 - 4) * 0.05625 in front, which is why anchoring on the origin looked
-     * head-attached (and buried the cord in the block when stuck).
+     * cord ties on. The head sits at the origin (the block surface when stuck), and
+     * the shaft is sized for square texels: 12px wide at the same units/texel as its
+     * 7px height (which spans 4 model units), i.e. 12 * 4 / 7 model units long. So the
+     * tail is that length times the render scale behind the origin. Keep this in sync
+     * with the shaft geometry in {@link #renderArrow}.
      */
-    private static final double ARROW_TAIL_REACH = (8.0D + 4.0D) * 0.05625D;
+    private static final double ARROW_TAIL_REACH = (12.0D * 4.0D / 7.0D) * 0.05625D;
 
     @Override
     public void doRender(Entity entity, double x, double y, double z, float yaw, float partial)
@@ -81,35 +82,46 @@ public class RenderGrapplingHook extends Render
         GL11.glScalef(scale, scale, scale);
         GL11.glTranslatef(-4.0F, 0.0F, 0.0F);
 
-        // The flat cross-section capping the tail, drawn from both faces. It sits at
-        // x=-8 (the back edge of the shaft planes), not vanilla's -7: the shaft art
-        // runs the full 12px to that edge, so the cap sits flush with the tail end of
-        // the shaft instead of floating 1px ahead of it.
+        // Arrow geometry in model units. The side art is 12x7 px, so for square
+        // (undistorted) texels the shaft quad must keep that 12:7 aspect: it is 2*half
+        // tall, so its length is 12px at the same units/texel as the 7px height. The
+        // head sits at x=+4, which the translate(-4) above maps to the entity origin
+        // (the block surface when stuck); the tail/back cap follows behind it. Keeping
+        // the head fixed and pulling the tail in shortens the arrow without lifting the
+        // head off the surface -- and the shorter span un-stretches the texels.
+        double half = 2.0D;                                    // half the shaft height
+        double headX = 4.0D;                                   // arrowhead end, at the origin
+        double tailX = headX - 12.0D * (2.0D * half) / 7.0D;   // length for square texels
+
+        // The flat cross-section capping the tail, drawn from both faces, flush with
+        // the back edge of the shaft planes.
         GL11.glNormal3f(scale, 0.0F, 0.0F);
         t.startDrawingQuads();
-        t.addVertexWithUV(-8.0D, -2.0D, -2.0D, backU0, backV0);
-        t.addVertexWithUV(-8.0D, -2.0D, 2.0D, backU1, backV0);
-        t.addVertexWithUV(-8.0D, 2.0D, 2.0D, backU1, backV1);
-        t.addVertexWithUV(-8.0D, 2.0D, -2.0D, backU0, backV1);
+        t.addVertexWithUV(tailX, -half, -half, backU0, backV0);
+        t.addVertexWithUV(tailX, -half, half, backU1, backV0);
+        t.addVertexWithUV(tailX, half, half, backU1, backV1);
+        t.addVertexWithUV(tailX, half, -half, backU0, backV1);
         t.draw();
         GL11.glNormal3f(-scale, 0.0F, 0.0F);
         t.startDrawingQuads();
-        t.addVertexWithUV(-8.0D, 2.0D, -2.0D, backU0, backV0);
-        t.addVertexWithUV(-8.0D, 2.0D, 2.0D, backU1, backV0);
-        t.addVertexWithUV(-8.0D, -2.0D, 2.0D, backU1, backV1);
-        t.addVertexWithUV(-8.0D, -2.0D, -2.0D, backU0, backV1);
+        t.addVertexWithUV(tailX, half, -half, backU0, backV0);
+        t.addVertexWithUV(tailX, half, half, backU1, backV0);
+        t.addVertexWithUV(tailX, -half, half, backU1, backV1);
+        t.addVertexWithUV(tailX, -half, -half, backU0, backV1);
         t.draw();
 
-        // The shaft: four planes in a + cross, each showing the side view.
+        // The shaft: four planes in a + cross, each showing the side view, spanning
+        // tailX..headX so the 12px-wide art maps at the same per-texel size as its
+        // 7px height -- square texels, no lengthwise stretch.
         for (int i = 0; i < 4; ++i)
         {
             GL11.glRotatef(90.0F, 1.0F, 0.0F, 0.0F);
             GL11.glNormal3f(0.0F, 0.0F, scale);
             t.startDrawingQuads();
-            t.addVertexWithUV(-8.0D, -2.0D, 0.0D, shaftU0, shaftV0);
-            t.addVertexWithUV(8.0D, -2.0D, 0.0D, shaftU1, shaftV0);
-            t.addVertexWithUV(8.0D, 2.0D, 0.0D, shaftU1, shaftV1);
-            t.addVertexWithUV(-8.0D, 2.0D, 0.0D, shaftU0, shaftV1);
+            t.addVertexWithUV(tailX, -half, 0.0D, shaftU0, shaftV0);
+            t.addVertexWithUV(headX, -half, 0.0D, shaftU1, shaftV0);
+            t.addVertexWithUV(headX, half, 0.0D, shaftU1, shaftV1);
+            t.addVertexWithUV(tailX, half, 0.0D, shaftU0, shaftV1);
             t.draw();
         }
 

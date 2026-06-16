@@ -1,0 +1,8 @@
+{
+  "fire": {
+    "category": "player",
+    "sounds": [
+      "grapplinghook:fire"
+    ]
+  }
+}

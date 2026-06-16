@@ -112,12 +112,19 @@ public final class Tuning
     public static final double WALL_JUMP_FACING_DOT = 0.5D;
 
     // --- Yank FoV punch (purely cosmetic) -----------------------------------
-    // Vanilla smooths the FoV multiplier (~0.5/tick lerp) and clamps it to 1.5, so
-    // these are over-driven and decay slowly enough for the swell to read clearly.
-    /** FoV-multiplier bonus from a full-force yank (scales with yank speed). */
+    // Vanilla feeds the FoV multiplier through a 0.5/tick smoothing filter and
+    // clamps it to 1.5. The filter only swells the FoV if the punch stays high for
+    // several ticks, so the decay is slow (an earlier 0.33 decay collapsed the punch
+    // before the filter could lift it -- the effect looked dead). A floor keeps even
+    // a feeble yank visible; REF_SPEED is where the punch saturates to its max.
+    /** Minimum FoV-multiplier bonus, applied to any yank however gentle. */
+    public static final double FOV_PUNCH_MIN = 0.15D;
+    /** FoV-multiplier bonus from a full-force yank (vanilla clamps the result to +0.5). */
     public static final double FOV_PUNCH_MAX = 0.5D;
-    /** Per-tick decay of the yank FoV punch back to zero. */
-    public static final double FOV_PUNCH_DECAY = 0.33D;
+    /** Yank speed (blocks/tick) at which the punch reaches FOV_PUNCH_MAX. */
+    public static final double FOV_PUNCH_REF_SPEED = 2.5D;
+    /** Per-tick decay of the yank FoV punch back to zero (slow, so the swell reads). */
+    public static final double FOV_PUNCH_DECAY = 0.8D;
 
     // --- Rendering ----------------------------------------------------------
     /** Half-thickness of the drawn cord, in blocks. */
