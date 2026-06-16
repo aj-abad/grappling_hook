@@ -141,9 +141,10 @@ If the flight ray passes through a living mob's (expanded) box before any block,
 hearts), and if the mob survives, leashes it at the current gap + `LEEWAY`. While latched
 (server-side `tickLatched`): the mob is kept within `cableLength` of the player; holding **use**
 reels it in (forwarded as `MsgReel`, sent only on edges); left-click **yanks** the mob toward
-the player (`MsgYankMob` → `yankTarget`, mirrors the player yank with `MOB_YANK_*`). If terrain
-stops the mob from closing the gap (progress < `MOB_DRAG_MIN_PROGRESS` of a demanded pull ≥
-`MOB_DRAG_MIN_PULL`), the cable **snaps**.
+the player *and then disconnects* — dropping the hook and reverting the stack to primed
+(`MsgYankMob` → `yankTarget`, mirroring the player yank's fling+disconnect with `MOB_YANK_*`). If
+terrain stops the mob from closing the gap (progress < `MOB_DRAG_MIN_PROGRESS` of a demanded pull
+≥ `MOB_DRAG_MIN_PULL`), the cable **snaps**.
 
 ## The cable model (wrap / unwrap around geometry)
 

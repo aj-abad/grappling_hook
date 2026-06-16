@@ -209,8 +209,14 @@ public final class GrappleController
         }
         else if (state == EntityGrapplingHook.STATE_LATCHED)
         {
-            // Fling the latched mob toward us (server-side); the cable stays attached.
+            // Fling the latched mob toward us and disconnect: the server applies the
+            // impulse and drops the hook. Prime the item locally and suppress the hook
+            // until it despawns, mirroring the player-yank/disconnect instant feedback.
             ModNetwork.CHANNEL.sendToServer(new MsgYankMob());
+            primeHeldHookLocally(player);
+            this.suppressedHookId = this.hook.getEntityId();
+            this.hook.renderPivots = null;
+            this.stuckInitialized = false;
         }
     }
 

@@ -546,39 +546,46 @@ public class EntityGrapplingHook extends Entity implements IEntityAdditionalSpaw
     }
 
     /**
-     * Fling the latched mob toward the player, mirroring the player-to-hook yank: the
-     * aim is raised by {@link Tuning#MOB_YANK_RISE} and the speed scales with the
-     * straight player-to-mob distance. The latch stays attached.
+     * Fling the latched mob toward the player, then release the cable (drop the hook
+     * and revert the stack to primed) -- mirroring the player-to-hook yank's
+     * fling-and-disconnect. The aim is raised by {@link Tuning#MOB_YANK_RISE} and the
+     * speed scales with the straight player-to-mob distance.
      */
     public void yankTarget()
     {
         if (this.worldObj.isRemote) return;
+
         EntityLivingBase mob = getTarget();
         EntityPlayer owner = getOwner();
-        if (mob == null || owner == null || !mob.isEntityAlive()) return;
+        if (mob != null && owner != null && mob.isEntityAlive())
+        {
+            double tx = owner.posX;
+            double ty = owner.posY + owner.height * 0.5D;
+            double tz = owner.posZ;
+            double mobCenterY = mob.posY + mob.height * 0.5D;
 
-        double tx = owner.posX;
-        double ty = owner.posY + owner.height * 0.5D;
-        double tz = owner.posZ;
-        double mobCenterY = mob.posY + mob.height * 0.5D;
+            // Force scales with the straight player->mob gap (no wrapping while latched).
+            double rdx = tx - mob.posX, rdy = ty - mobCenterY, rdz = tz - mob.posZ;
+            double realDist = Math.sqrt(rdx * rdx + rdy * rdy + rdz * rdz);
 
-        // Force scales with the straight player->mob gap (no wrapping while latched).
-        double rdx = tx - mob.posX, rdy = ty - mobCenterY, rdz = tz - mob.posZ;
-        double realDist = Math.sqrt(rdx * rdx + rdy * rdy + rdz * rdz);
+            // Aim a little above the player so the mob arcs up and over lips/ledges.
+            double ax = tx - mob.posX;
+            double ay = (ty + Tuning.MOB_YANK_RISE) - mobCenterY;
+            double az = tz - mob.posZ;
+            double aLen = Math.sqrt(ax * ax + ay * ay + az * az);
+            if (aLen >= 1.0E-4D)
+            {
+                double speed = Math.min(Tuning.MOB_YANK_K * realDist, Tuning.MOB_YANK_MAX_SPEED);
+                mob.motionX = ax / aLen * speed;
+                mob.motionY = ay / aLen * speed;
+                mob.motionZ = az / aLen * speed;
+                mob.velocityChanged = true;
+                mob.fallDistance = 0.0F;
+            }
+        }
 
-        // Aim a little above the player so the mob arcs up and over lips/ledges.
-        double ax = tx - mob.posX;
-        double ay = (ty + Tuning.MOB_YANK_RISE) - mobCenterY;
-        double az = tz - mob.posZ;
-        double aLen = Math.sqrt(ax * ax + ay * ay + az * az);
-        if (aLen < 1.0E-4D) return;
-
-        double speed = Math.min(Tuning.MOB_YANK_K * realDist, Tuning.MOB_YANK_MAX_SPEED);
-        mob.motionX = ax / aLen * speed;
-        mob.motionY = ay / aLen * speed;
-        mob.motionZ = az / aLen * speed;
-        mob.velocityChanged = true;
-        mob.fallDistance = 0.0F;
+        // Left-click yank also disconnects: fling the mob free and reset to primed.
+        killAndResetStack();
     }
 
     /** Snap the cable: reset the owner's stack to primed and remove the hook (server). */

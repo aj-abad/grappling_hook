@@ -12,8 +12,9 @@ import net.minecraft.entity.player.EntityPlayerMP;
 
 /**
  * Client -&gt; server: the player left-clicked while a hook is latched onto a mob.
- * The server flings the latched mob toward the player (the latch stays attached),
- * mirroring the player-to-hook yank but with the mob-yank tuning constants.
+ * The server flings the latched mob toward the player and then drops the hook,
+ * reverting the item to primed -- mirroring the player-to-hook yank's fling and
+ * disconnect, but with the mob-yank tuning constants.
  */
 public class MsgYankMob implements IMessage
 {
