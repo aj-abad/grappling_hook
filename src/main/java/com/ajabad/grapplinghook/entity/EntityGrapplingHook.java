@@ -233,6 +233,30 @@ public class EntityGrapplingHook extends Entity
         this.retractTicks = (getState() == STATE_RETRACTING) ? this.retractTicks + 1 : 0;
     }
 
+    /**
+     * Client entity-tracking applies server position updates through here. While
+     * STUCK the hook is deliberately embedded in the block it bit into, but vanilla
+     * {@code setPositionAndRotation2} runs a collision-resolution step that ejects
+     * the box up onto the block's surface. The tracker force-resyncs a motionless
+     * entity periodically, so that ejection -- undone the next tick by the anchor
+     * snap in {@link #onUpdate} -- shows up as a recurring vertical jitter. Pin a
+     * stuck hook to its authoritative anchor instead and skip the vanilla handling;
+     * the anchor is already synced via the DataWatcher.
+     */
+    @Override
+    public void setPositionAndRotation2(double x, double y, double z, float yaw, float pitch, int inc)
+    {
+        if (getState() == STATE_STUCK)
+        {
+            this.setPosition(
+                    this.dataWatcher.getWatchableObjectFloat(DW_ANCHOR_X),
+                    this.dataWatcher.getWatchableObjectFloat(DW_ANCHOR_Y),
+                    this.dataWatcher.getWatchableObjectFloat(DW_ANCHOR_Z));
+            return;
+        }
+        super.setPositionAndRotation2(x, y, z, yaw, pitch, inc);
+    }
+
     private boolean isOwnerValid(EntityPlayer owner)
     {
         if (owner == null || owner.isDead || !owner.isEntityAlive()) return false;
