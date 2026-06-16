@@ -112,18 +112,29 @@ public final class Tuning
     public static final double WALL_JUMP_FACING_DOT = 0.5D;
 
     // --- Yank FoV punch (purely cosmetic) -----------------------------------
-    // Vanilla feeds the FoV multiplier through a 0.5/tick smoothing filter and
-    // clamps it to 1.5. The filter only swells the FoV if the punch stays high for
-    // several ticks, so the decay is slow (an earlier 0.33 decay collapsed the punch
-    // before the filter could lift it -- the effect looked dead). A floor keeps even
-    // a feeble yank visible; REF_SPEED is where the punch saturates to its max.
+    // Vanilla doesn't render the FoV we ask for directly: it feeds our value through a
+    // 0.5/tick smoothing filter (fovModifierHand chases the target, halving the gap each
+    // tick) and clamps the result to 1.5x. So a one-tick spike barely registers -- the
+    // filter needs the target HELD near its peak for several ticks to climb there. Hence
+    // hold-then-decay: pin the punch at full strength for HOLD_TICKS (enough for the
+    // filter to reach the 1.5 clamp), THEN decay it for a smooth fade. (The earlier
+    // decay-from-tick-0 version raced the filter and topped out near +0.32 of the
+    // intended +0.5 -- and far less for ordinary yanks -- so it looked dead.) A floor
+    // keeps even a feeble yank visible; REF_SPEED is where the punch saturates to its max.
     /** Minimum FoV-multiplier bonus, applied to any yank however gentle. */
     public static final double FOV_PUNCH_MIN = 0.15D;
     /** FoV-multiplier bonus from a full-force yank (vanilla clamps the result to +0.5). */
     public static final double FOV_PUNCH_MAX = 0.5D;
     /** Yank speed (blocks/tick) at which the punch reaches FOV_PUNCH_MAX. */
     public static final double FOV_PUNCH_REF_SPEED = 2.5D;
-    /** Per-tick decay of the yank FoV punch back to zero (slow, so the swell reads). */
+    /**
+     * Ticks to hold the punch at full strength before decaying. The 0.5/tick filter
+     * closes half its remaining gap each tick (1.5 - 0.5^(n+1) after n ticks), so ~5
+     * holds put it within ~0.5% of the 1.5 clamp -- and the surplus absorbs the case
+     * where the trigger lands after the tick's filter step (costing the first climb).
+     */
+    public static final int FOV_PUNCH_HOLD_TICKS = 5;
+    /** Per-tick decay of the yank FoV punch once the hold expires (smooth fade-out). */
     public static final double FOV_PUNCH_DECAY = 0.8D;
 
     // --- Rendering ----------------------------------------------------------

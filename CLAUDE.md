@@ -204,13 +204,16 @@ design (tweak here, not in the physics code).
 | Retract | `RETRACT_SPEED`(2.5), `RETRACT_CATCH_DIST`(1.5), `RETRACT_TAUT_TICKS`(6) | |
 | Jump | `JUMP_BOOST`(0.5), `JUMP_UP`(0.5), `SWING_JUMP_MIN_SPEED`(0.2) | |
 | Wall jump | `WALL_JUMP_H`(0.5), `WALL_JUMP_UP`(0.5), `WALL_JUMP_FACING_DOT`(0.5) | dot = ~60° facing cone |
-| FoV punch | `FOV_PUNCH_MIN/MAX/REF_SPEED/DECAY` | cosmetic; **decay must stay slow** (see below) |
+| FoV punch | `FOV_PUNCH_MIN/MAX/REF_SPEED/HOLD_TICKS/DECAY` | cosmetic; **hold-then-decay** (see below) |
 | Rendering | `CORD_WIDTH`, `CORD_COLOR_LIGHT/DARK`, `CORD_SUBDIVISIONS`, `CORD_*_SAG*`, `CORD_FLIGHT_SAG`, `CORD_GROUND_CLEARANCE`, `CORD_SETTLE_TICKS` | |
 
-**FoV punch caveat** (`client/ClientEffects`): vanilla feeds `FOVUpdateEvent.newfov` through a
-0.5/tick smoothing filter (clamped to 1.5×). The punch only becomes visible if it stays high for
-several ticks, so `FOV_PUNCH_DECAY` is deliberately slow — a fast decay collapses the punch before
-the filter can lift it and it looks dead.
+**FoV punch caveat** (`client/ClientEffects`): vanilla treats `FOVUpdateEvent.newfov` as the
+*target* of a 0.5/tick smoothing filter (the rendered FoV chases it, halving the gap each tick)
+and clamps it to 1.5×. The rendered FoV only swells if the target stays high for several ticks, so
+the punch is **held** at full strength for `FOV_PUNCH_HOLD_TICKS` (long enough for the filter to
+reach the clamp) and only *then* decayed (`FOV_PUNCH_DECAY`) for a smooth fade. Decaying from the
+first tick races the filter — it tops out near +0.32 of the intended +0.5 (far less for ordinary
+yanks) and looks dead.
 
 ## Registration & wiring
 
