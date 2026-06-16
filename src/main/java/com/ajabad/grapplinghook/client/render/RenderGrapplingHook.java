@@ -166,10 +166,12 @@ public class RenderGrapplingHook extends Render
         // Subdivide each span and droop it: the anchored active span sags by its
         // slack (taut => straight line), an in-flight cord gets a small loose droop,
         // and a retracting hook eases that droop out so its cord pulls taut as it reels.
+        // A freshly-anchored cord blends quickly from the flight droop to the slack sag.
         boolean tethered = pivots != null && !pivots.isEmpty();
         double droopScale = retractDroopScale(hook, partial);
+        double settle = stuckSettle(hook, partial);
         double offX = eiwX - x, offY = eiwY - y, offZ = eiwZ - z;
-        List<double[]> curve = saggedCurve(pts, tethered, droopScale, hook.renderSlack, owner.worldObj, offX, offY, offZ);
+        List<double[]> curve = saggedCurve(pts, tethered, droopScale, settle, hook.renderSlack, owner.worldObj, offX, offY, offZ);
 
         // Light each cord point from the world at its own position rather than
         // letting it inherit the hook entity's render brightness: when the hook is
@@ -197,8 +199,8 @@ public class RenderGrapplingHook extends Render
     }
 
     /** Expand the coarse pivot points into a finer, drooping polyline. */
-    private List<double[]> saggedCurve(double[][] pts, boolean tethered, double droopScale, double slack,
-            World world, double offX, double offY, double offZ)
+    private List<double[]> saggedCurve(double[][] pts, boolean tethered, double droopScale, double settle,
+            double slack, World world, double offX, double offY, double offZ)
     {
         List<double[]> curve = new ArrayList<double[]>();
         for (int i = 0; i + 1 < pts.length; ++i)
@@ -207,7 +209,7 @@ public class RenderGrapplingHook extends Render
             double[] b = pts[i + 1];
             double dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
             double len = Math.sqrt(dx * dx + dy * dy + dz * dz);
-            double sag = spanSag(tethered, droopScale, i, len, slack);
+            double sag = spanSag(tethered, droopScale, settle, i, len, slack);
             for (int k = 0; k < Tuning.CORD_SUBDIVISIONS; ++k)
             {
                 double s = (double) k / Tuning.CORD_SUBDIVISIONS;
@@ -242,19 +244,37 @@ public class RenderGrapplingHook extends Render
     }
 
     /** Droop depth for one span. */
-    private double spanSag(boolean tethered, double droopScale, int spanIndex, double len, double slack)
+    private double spanSag(boolean tethered, double droopScale, double settle, int spanIndex, double len, double slack)
     {
         if (tethered)
         {
-            // Span 0 (hand -> active pivot) is the only free span; the rest are taut
-            // wrapped segments. Sag comes from the rope's slack, so a taut rope
-            // (slack 0, i.e. player at max distance) draws straight.
-            if (spanIndex != 0 || slack <= 0.0D) return 0.0D;
-            double h = Math.sqrt(3.0D * len * slack / 8.0D) * Tuning.CORD_SAG_SCALE;
-            return Math.min(Tuning.CORD_SAG_MAX, h);
+            double anchored = anchoredSpanSag(spanIndex, len, slack);
+            if (settle >= 1.0D) return anchored;
+            // Just caught a block: ease from the loose in-flight droop to the settled,
+            // slack-derived sag over a fraction of a second so the cord doesn't pop.
+            double flight = flightSpanSag(len, 1.0D);
+            return flight + (anchored - flight) * settle;
         }
         // In-flight or remote cord: a small, loose droop. While retracting, droopScale
         // eases from 1 to 0 so the cord pulls taut over a fraction of a second.
+        return flightSpanSag(len, droopScale);
+    }
+
+    /**
+     * Settled droop of an anchored span. Span 0 (hand -> active pivot) is the only
+     * free span; the rest are taut wrapped segments. Sag comes from the rope's slack,
+     * so a taut rope (slack 0, i.e. player at max distance) draws straight.
+     */
+    private double anchoredSpanSag(int spanIndex, double len, double slack)
+    {
+        if (spanIndex != 0 || slack <= 0.0D) return 0.0D;
+        double h = Math.sqrt(3.0D * len * slack / 8.0D) * Tuning.CORD_SAG_SCALE;
+        return Math.min(Tuning.CORD_SAG_MAX, h);
+    }
+
+    /** Loose in-flight droop: a small fraction of the span length, scaled by droopScale. */
+    private double flightSpanSag(double len, double droopScale)
+    {
         return Math.min(Tuning.CORD_SAG_MAX, len * Tuning.CORD_FLIGHT_SAG) * droopScale;
     }
 
@@ -271,6 +291,22 @@ public class RenderGrapplingHook extends Render
         if (t >= 1.0D) return 0.0D;
         double k = t * t * (3.0D - 2.0D * t); // smoothstep: gentle ease in and out
         return 1.0D - k;
+    }
+
+    /**
+     * Cord settle factor: 0 the instant the hook anchors, easing 0 -> 1 over the first
+     * {@link Tuning#CORD_SETTLE_TICKS} ticks of being stuck so the cord blends quickly
+     * from its loose in-flight droop to its settled, slack-derived sag instead of
+     * snapping. Returns 1.0 (fully settled) in every other state. {@code partial}
+     * interpolates within the tick for frame-smooth motion.
+     */
+    private double stuckSettle(EntityGrapplingHook hook, float partial)
+    {
+        if (hook.getState() != EntityGrapplingHook.STATE_STUCK) return 1.0D;
+        double t = (hook.stuckTicks + partial) / Tuning.CORD_SETTLE_TICKS;
+        if (t >= 1.0D) return 1.0D;
+        double k = t * t * (3.0D - 2.0D * t); // smoothstep: gentle ease in and out
+        return k;
     }
 
     /**

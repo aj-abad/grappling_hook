@@ -142,6 +142,12 @@ public final class Tuning
     public static final double CORD_SAG_MAX = 2.5D;
     /** How far above a block's surface the resting cord floats, in blocks. */
     public static final double CORD_GROUND_CLEARANCE = 0.06D;
+    /**
+     * Time (ticks, 20/s) over which a freshly-anchored cord eases from its loose
+     * in-flight droop to its settled, slack-derived sag, so it blends quickly
+     * instead of popping the instant the hook catches a block.
+     */
+    public static final double CORD_SETTLE_TICKS = 5.0D;
 
     private Tuning() {}
 }

@@ -79,6 +79,13 @@ public class EntityGrapplingHook extends Entity implements IEntityAdditionalSpaw
      */
     public int retractTicks;
 
+    /**
+     * Ticks spent in {@link #STATE_STUCK}, reset to 0 in any other state. Lets the
+     * renderer ease the cord from its loose in-flight droop to the settled,
+     * slack-derived sag when the hook first anchors, rather than popping it.
+     */
+    public int stuckTicks;
+
     public EntityGrapplingHook(World world)
     {
         super(world);
@@ -235,6 +242,9 @@ public class EntityGrapplingHook extends Entity implements IEntityAdditionalSpaw
 
         // Count ticks spent retracting so the renderer can ease the cord taut.
         this.retractTicks = (getState() == STATE_RETRACTING) ? this.retractTicks + 1 : 0;
+        // Count ticks spent stuck so the renderer can ease the cord from its loose
+        // in-flight droop to the settled sag when the hook first anchors.
+        this.stuckTicks = (getState() == STATE_STUCK) ? this.stuckTicks + 1 : 0;
     }
 
     /**
