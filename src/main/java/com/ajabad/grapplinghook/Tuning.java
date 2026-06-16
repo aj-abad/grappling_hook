@@ -137,6 +137,25 @@ public final class Tuning
     /** Per-tick decay of the yank FoV punch once the hold expires (smooth fade-out). */
     public static final double FOV_PUNCH_DECAY = 0.8D;
 
+    // --- Sound cues (client-local audio feedback) ---------------------------
+    // Played on the acting player's client only, like the FoV punch above: 1.7.10
+    // routes world sound through RenderGlobal.playSound (empty on the client), so these
+    // go straight through the SoundHandler instead. Each event lists three variant files
+    // in sounds.json, so the engine picks one at random per play (the pitch jitter in the
+    // controller adds a little more variation on top).
+    /** Volume of the yank cue (player- and mob-yank share it). Kept below the fire/rope
+     *  cues because the yank clips are a sharper transient and read louder at equal gain. */
+    public static final float YANK_SOUND_VOLUME = 0.6F;
+    /** Volume of each rope-creak cue played while reeling a taut cable. */
+    public static final float ROPE_SOUND_VOLUME = 0.8F;
+    /**
+     * Gap (ticks, 20/s) between rope creaks while actively reeling a taut cable: after
+     * each creak a fresh delay is rolled uniformly in [MIN, MAX], so the creaks land at
+     * irregular intervals instead of on a mechanical beat.
+     */
+    public static final int ROPE_SOUND_MIN_TICKS = 10;
+    public static final int ROPE_SOUND_MAX_TICKS = 22;
+
     // --- Rendering ----------------------------------------------------------
     /** Half-thickness of the drawn cord, in blocks. */
     public static final float CORD_WIDTH = 0.05F;

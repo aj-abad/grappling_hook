@@ -2,6 +2,7 @@ package com.ajabad.grapplinghook.client;
 
 import java.util.ArrayList;
 
+import com.ajabad.grapplinghook.Reference;
 import com.ajabad.grapplinghook.Tuning;
 import com.ajabad.grapplinghook.entity.EntityGrapplingHook;
 import com.ajabad.grapplinghook.item.ItemGrapplingHook;
@@ -15,9 +16,11 @@ import cpw.mods.fml.relauncher.Side;
 import cpw.mods.fml.relauncher.SideOnly;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.audio.PositionedSoundRecord;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.AxisAlignedBB;
+import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.Vec3;
 
 import org.lwjgl.input.Keyboard;
@@ -60,6 +63,11 @@ public final class GrappleController
     // edges as MsgReel. Keyed to the hook's id so a fresh latch re-syncs from "off".
     private int reelHookId = -1;
     private boolean reelSent;
+
+    // Rope-creak audio: while actively reeling a taut block-stuck cable, play a rope
+    // sound at random intervals. Counts down to the next creak; reset to 0 whenever the
+    // reel isn't biting so the next reel-in creaks immediately.
+    private int ropeSoundTicks;
 
     private GrappleController() {}
 
@@ -112,12 +120,26 @@ public final class GrappleController
             return;
         }
 
-        // Clean instant drop (no added momentum), in any state — good for stepping
-        // off onto a ledge while scaling a wall.
+        // A fresh Shift press acts on the active hook much like the left mouse button,
+        // with one twist: an *attached* hook drops cleanly rather than yanking. So Shift
+        // while STUCK to a block (step off onto a ledge mid-climb) or LATCHED to a mob (let
+        // it go, no fling) is an instant, momentum-free disconnect, while Shift on a still
+        // FLYING hook retracts it — exactly like a left-click mid-flight. (RETRACTING ignores
+        // both, just as left-click does.)
         if (disconnectEdge)
         {
-            disconnect(player);
-            return;
+            byte disconnectState = this.hook.getState();
+            if (disconnectState == EntityGrapplingHook.STATE_STUCK
+                    || disconnectState == EntityGrapplingHook.STATE_LATCHED)
+            {
+                disconnect(player);
+                return;
+            }
+            if (disconnectState == EntityGrapplingHook.STATE_FLYING)
+            {
+                retractFlyingHook(); // mirror left-click mid-flight
+                return;
+            }
         }
 
         // Latched onto a mob: the drag/reel/yank physics are server-authoritative
@@ -162,9 +184,10 @@ public final class GrappleController
             }
         }
 
+        boolean reeling = false;
         if (mc.gameSettings.keyBindUseItem.getIsKeyPressed())
         {
-            applyReel();
+            reeling = applyReel();
         }
         else if (mc.inGameHasFocus && Keyboard.isKeyDown(ModKeys.EXTEND.getKeyCode()))
         {
@@ -172,6 +195,8 @@ public final class GrappleController
             // pressed flag, which another mod's keycode collision can swallow.
             applyExtend(player);
         }
+        // Rope creak: only while the reel is actually taking in a taut cable.
+        tickRopeSound(player, reeling && isTaut(player));
 
         if (!wallJumped)
         {
@@ -198,7 +223,7 @@ public final class GrappleController
         byte state = this.hook.getState();
         if (state == EntityGrapplingHook.STATE_FLYING)
         {
-            ModNetwork.CHANNEL.sendToServer(new MsgRetract());
+            retractFlyingHook();
         }
         else if (state == EntityGrapplingHook.STATE_STUCK)
         {
@@ -213,11 +238,21 @@ public final class GrappleController
             // impulse and drops the hook. Prime the item locally and suppress the hook
             // until it despawns, mirroring the player-yank/disconnect instant feedback.
             ModNetwork.CHANNEL.sendToServer(new MsgYankMob());
+            playYankSound(player);
             primeHeldHookLocally(player);
             this.suppressedHookId = this.hook.getEntityId();
             this.hook.renderPivots = null;
             this.stuckInitialized = false;
         }
+    }
+
+    /**
+     * Reel a still-flying hook back to the hand. The server flips FLYING&rarr;RETRACTING;
+     * shared by the left mouse button and the Shift key so both behave identically mid-flight.
+     */
+    private void retractFlyingHook()
+    {
+        ModNetwork.CHANNEL.sendToServer(new MsgRetract());
     }
 
     /**
@@ -262,13 +297,16 @@ public final class GrappleController
         return Vec3.createVectorHelper(player.posX, player.posY + player.height * 0.5D, player.posZ);
     }
 
-    private void applyReel()
+    /** Shorten the cable while reeling; returns true if it actually took any in. */
+    private boolean applyReel()
     {
         double min = this.cable.consumedLength() + Tuning.MIN_ACTIVE_LENGTH;
         if (this.cable.cableLength > min)
         {
             this.cable.cableLength = Math.max(min, this.cable.cableLength - Tuning.REEL_SPEED);
+            return true;
         }
+        return false;
     }
 
     private void applyExtend(EntityPlayer player)
@@ -409,6 +447,7 @@ public final class GrappleController
         player.motionZ = dz / dist * speed;
         player.fallDistance = 0.0F;
         ClientEffects.INSTANCE.onYank(speed); // cosmetic FoV punch, scaled by force
+        playYankSound(player);
 
         // Instantly disconnect: prime the item now, have the server drop the hook,
         // and enter the free yank-flight state (where jump can launch).
@@ -556,6 +595,53 @@ public final class GrappleController
         }
     }
 
+    /** Play the yank cue (one of three variants, randomly pitched) on this client. */
+    private void playYankSound(EntityPlayer player)
+    {
+        playLocalSound(player, "yank", Tuning.YANK_SOUND_VOLUME, jitterPitch(player));
+    }
+
+    /**
+     * Step the rope-creak timer. While {@code active} (reeling a taut cable), play a
+     * creak whenever the countdown hits zero, then roll a fresh gap in
+     * [{@link Tuning#ROPE_SOUND_MIN_TICKS}, {@link Tuning#ROPE_SOUND_MAX_TICKS}] so the
+     * creaks fall at irregular intervals. When inactive the timer resets to zero, so a
+     * fresh reel-in creaks at once.
+     */
+    private void tickRopeSound(EntityPlayer player, boolean active)
+    {
+        if (!active) { this.ropeSoundTicks = 0; return; }
+        if (this.ropeSoundTicks > 0) { this.ropeSoundTicks--; return; }
+        playLocalSound(player, "rope", Tuning.ROPE_SOUND_VOLUME, jitterPitch(player));
+        int span = Tuning.ROPE_SOUND_MAX_TICKS - Tuning.ROPE_SOUND_MIN_TICKS;
+        this.ropeSoundTicks = Tuning.ROPE_SOUND_MIN_TICKS
+                + (span > 0 ? player.worldObj.rand.nextInt(span + 1) : 0);
+    }
+
+    /** A lightly randomized pitch, mirroring the fire sound's jitter. */
+    private static float jitterPitch(EntityPlayer player)
+    {
+        return 1.0F / (player.worldObj.rand.nextFloat() * 0.2F + 0.9F);
+    }
+
+    /**
+     * Play one random variant of a mod sound event on the local client only.
+     *
+     * <p>1.7.10 client sound must go through the {@code SoundHandler}:
+     * {@code World.playSoundAtEntity} routes to {@code RenderGlobal.playSound}, which is
+     * empty on the client (world sounds reach a client only via the server's broadcast
+     * packet). These are local feedback cues for the acting player -- like the yank FoV
+     * punch -- so they play straight through the handler, positioned on the player (so
+     * camera mode doesn't matter). The event name carries three files in
+     * {@code sounds.json}; the handler picks one at random.
+     */
+    private static void playLocalSound(EntityPlayer player, String event, float volume, float pitch)
+    {
+        Minecraft.getMinecraft().getSoundHandler().playSound(new PositionedSoundRecord(
+                new ResourceLocation(Reference.MODID, event), volume, pitch,
+                (float) player.posX, (float) player.posY, (float) player.posZ));
+    }
+
     /**
      * Kick off the faced wall along its outward normal (nx, nz): an away-from-wall +
      * up impulse. The cable stays attached, so the constraint turns this into an arc
@@ -580,6 +666,7 @@ public final class GrappleController
         this.yankTicks = 0;
         this.reelHookId = -1;
         this.reelSent = false;
+        this.ropeSoundTicks = 0;
         this.cable.pivots.clear();
     }
 }

@@ -339,15 +339,16 @@ public class EntityGrapplingHook extends Entity implements IEntityAdditionalSpaw
 
         if (!this.worldObj.isRemote)
         {
-            // A miss that flies past the grapple range (or never lands at all) is
-            // cleaned up at once and the stack returns to primed.
+            // A shot that reaches the end of its range (or never lands at all) doesn't
+            // vanish — it reels itself back to the hand, exactly like a left-click
+            // retract. The state flip is server-authoritative and syncs to clients via
+            // the state byte, which then drives tickRetracting on both sides.
             EntityPlayer owner = getOwner();
             double maxSq = Tuning.MAX_GRAPPLE_RANGE * Tuning.MAX_GRAPPLE_RANGE;
             if (this.ticksInAir > Tuning.MAX_FLIGHT_TICKS
                     || (owner != null && this.getDistanceSqToEntity(owner) > maxSq))
             {
-                resetOwnerStack(owner);
-                this.setDead();
+                setState(STATE_RETRACTING);
             }
         }
     }

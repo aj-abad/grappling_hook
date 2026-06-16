@@ -4,5 +4,21 @@
     "sounds": [
       "grapplinghook:fire"
     ]
+  },
+  "yank": {
+    "category": "player",
+    "sounds": [
+      "grapplinghook:yank1",
+      "grapplinghook:yank2",
+      "grapplinghook:yank3"
+    ]
+  },
+  "rope": {
+    "category": "player",
+    "sounds": [
+      "grapplinghook:rope1",
+      "grapplinghook:rope2",
+      "grapplinghook:rope3"
+    ]
   }
 }

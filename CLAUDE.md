@@ -78,17 +78,22 @@ Two **sync gotchas** are load-bearing (don't "simplify" them away):
 - **Exact launch velocity via `IEntityAdditionalSpawnData`.** `LAUNCH_SPEED` is `4.5` b/t, but
   the vanilla spawn/velocity packets clamp each component to ±3.9 b/t. So the true velocity is
   written in `writeSpawnData`/`readSpawnData`; the client then integrates the *identical*
-  parabola and needs no per-tick position correction. Entity is registered like an arrow
-  (`trackingRange 64, updateFrequency 20, sendVelocityUpdates false`) — see `ModEntities`. The
-  per-tick correction this avoids *was* the old flight jitter.
+  parabola and needs no per-tick position correction. Entity is registered like an arrow for
+  sync (`updateFrequency 20, sendVelocityUpdates false`) but with a wider `trackingRange 96`
+  (not 64) — see `ModEntities`. The wider range keeps the tether-anchor tracked right at
+  `MAX_GRAPPLE_RANGE` (64), where a maxed-out flight now turns around and retracts instead of
+  vanishing, so it can't blink out of tracking at the turnaround. The per-tick correction the
+  spawn-data velocity avoids *was* the old flight jitter.
 - **`setPositionAndRotation2` is overridden to pin a STUCK hook.** The tracker force-resyncs a
   motionless entity (~every 3s); vanilla's apply step runs collision resolution that ejects the
   block-embedded hook onto the surface, then `onUpdate` snaps it back next tick → recurring
   vertical jitter. The override pins it to the synced anchor and skips vanilla handling.
 
 **Teardown** (any of these resets the held stack to primed and removes the hook):
-owner invalid / out of `MAX_RANGE_SQ`, flight exceeds `MAX_FLIGHT_TICKS` or `MAX_GRAPPLE_RANGE`,
-player death / item toss / logout (`ServerEventHandler`), or an explicit release/disconnect.
+owner invalid / out of `MAX_RANGE_SQ`, player death / item toss / logout (`ServerEventHandler`),
+or an explicit release/disconnect. A flight that exceeds `MAX_FLIGHT_TICKS` or `MAX_GRAPPLE_RANGE`
+does **not** tear down — it flips to `STATE_RETRACTING` and reels home (then resets to primed when
+caught), so a miss returns the hook instead of vanishing it.
 
 ## Item states: primed ↔ fired
 
@@ -115,13 +120,16 @@ airborne this tick *and* last tick (rejects the ground-jump frame).
   tangential WASD push (`SWING_ACCEL`) so you can pump/steer. On the ground the rope only caps
   distance (no pump).
 - **Reel in** — hold the **use key** while STUCK: `applyReel` shrinks the cable down to
-  `consumedLength + MIN_ACTIVE_LENGTH`; the constraint drags the player inward.
+  `consumedLength + MIN_ACTIVE_LENGTH`; the constraint drags the player inward. While the
+  cable is **taut** and the reel is biting, a rope-creak cue (`grapplinghook:rope`) plays on
+  the local client at randomized intervals (`tickRopeSound`, `ROPE_SOUND_*`).
 - **Extend / rappel** — hold **Extend** (default Left Ctrl) while STUCK: lengthens the cable up
   to `MAX_CABLE_LENGTH`. Only actively pays the player *downward* (rappels) when taut, airborne,
   and not creative-flying *and* the rope points down; otherwise it just banks slack.
 - **Yank** — left-click while STUCK: fling toward the anchor (aim raised by `YANK_RISE`), speed
   `min(YANK_K * tautLength, YANK_MAX_SPEED)` where `tautLength` excludes spooled-out slack. Then
-  enters a free **yank-flight** window (`YANK_FLIGHT_TICKS`); the hook is dropped immediately.
+  enters a free **yank-flight** window (`YANK_FLIGHT_TICKS`); the hook is dropped immediately. A
+  **yank cue** (`grapplinghook:yank`, client-local) plays here and on the mob yank (`### Mob latch`).
 - **Jump-launch** — during yank-flight, jump → `launchBoost` (`JUMP_BOOST` along heading +
   `JUMP_UP` up).
 - **Swing-jump** — mid-air jump while taut *and* swinging at ≥ `SWING_JUMP_MIN_SPEED`: release
@@ -129,10 +137,15 @@ airborne this tick *and* last tick (rejects the ground-jump frame).
 - **Wall-jump** — mid-air jump while looking into any adjacent solid wall (cone set by
   `WALL_JUMP_FACING_DOT`, probed on all 4 cardinals so corners work): kick off that wall
   (`WALL_JUMP_H` out + `WALL_JUMP_UP` up) with the cable **still attached** (turns into an arc).
-- **Disconnect** — tap **Left Shift**: instant drop, momentum untouched (good for stepping onto
-  a ledge mid-climb).
-- **Retract** — left-click while the hook is still FLYING: sends `MsgRetract`; server flips to
-  RETRACTING and the hook reels home.
+- **Disconnect** — tap **Left Shift**. On an *attached* hook (STUCK or LATCHED) it's an instant,
+  momentum-untouched drop: stepping onto a ledge mid-climb, or letting a LATCHED mob go with no
+  fling (unlike the left-click yank). On a still-**FLYING** hook it instead retracts, identical to
+  a left-click mid-flight (shared `retractFlyingHook`). A retracting hook ignores it, as does
+  left-click.
+- **Retract** — left-click (or **Left Shift**) while the hook is still FLYING: sends `MsgRetract`;
+  server flips to RETRACTING and the hook reels home. The hook also **auto-retracts** when a flying
+  shot reaches `MAX_GRAPPLE_RANGE` or `MAX_FLIGHT_TICKS` without anchoring (same RETRACTING path,
+  server-driven).
 
 ### Mob latch
 
@@ -142,9 +155,10 @@ hearts), and if the mob survives, leashes it at the current gap + `LEEWAY`. Whil
 (server-side `tickLatched`): the mob is kept within `cableLength` of the player; holding **use**
 reels it in (forwarded as `MsgReel`, sent only on edges); left-click **yanks** the mob toward
 the player *and then disconnects* — dropping the hook and reverting the stack to primed
-(`MsgYankMob` → `yankTarget`, mirroring the player yank's fling+disconnect with `MOB_YANK_*`). If
-terrain stops the mob from closing the gap (progress < `MOB_DRAG_MIN_PROGRESS` of a demanded pull
-≥ `MOB_DRAG_MIN_PULL`), the cable **snaps**.
+(`MsgYankMob` → `yankTarget`, mirroring the player yank's fling+disconnect with `MOB_YANK_*`);
+tapping **Left Shift** instead releases the mob cleanly — a plain disconnect with no fling, the
+same `MsgRelease` drop as a STUCK hook. If terrain stops the mob from closing the gap (progress <
+`MOB_DRAG_MIN_PROGRESS` of a demanded pull ≥ `MOB_DRAG_MIN_PULL`), the cable **snaps**.
 
 ## The cable model (wrap / unwrap around geometry)
 
@@ -205,6 +219,7 @@ design (tweak here, not in the physics code).
 | Jump | `JUMP_BOOST`(0.5), `JUMP_UP`(0.5), `SWING_JUMP_MIN_SPEED`(0.2) | |
 | Wall jump | `WALL_JUMP_H`(0.5), `WALL_JUMP_UP`(0.5), `WALL_JUMP_FACING_DOT`(0.5) | dot = ~60° facing cone |
 | FoV punch | `FOV_PUNCH_MIN/MAX/REF_SPEED/HOLD_TICKS/DECAY` | cosmetic; **hold-then-decay** (see below) |
+| Sound cues | `YANK_SOUND_VOLUME`(0.6), `ROPE_SOUND_VOLUME`(0.8), `ROPE_SOUND_MIN/MAX_TICKS`(10/22) | client-local; random variant per play (sounds.json pool) |
 | Rendering | `CORD_WIDTH`, `CORD_COLOR_LIGHT/DARK`, `CORD_SUBDIVISIONS`, `CORD_*_SAG*`, `CORD_FLIGHT_SAG`, `CORD_GROUND_CLEARANCE`, `CORD_SETTLE_TICKS` | |
 
 **FoV punch caveat** (`client/ClientEffects`): vanilla treats `FOVUpdateEvent.newfov` as the
@@ -225,9 +240,16 @@ yanks) and looks dead.
   `ModNetwork.init()`. `init` registers event handlers (`ServerEventHandler` on both buses;
   client adds `ClientInputHandler` + `ClientEffects`).
 - **Recipe** (`ModItems`): I=iron, P=piston, S=string, B=bow — `["II ", "IPS", " SB"]`.
-- **Custom sound** (per project memory): `fire.ogg` lives in `assets/grapplinghook/sounds/`,
-  declared in `sounds.json`, played as `"grapplinghook:fire"`. `SoundHandler` auto-loads the
-  domain — no registration call needed.
+- **Custom sound** (per project memory): OGG Vorbis files live in `assets/grapplinghook/sounds/`,
+  declared in `sounds.json`, played by event name (`fire`, `yank`, `rope`). `SoundHandler`
+  auto-loads the domain — no registration call needed. Two load-bearing 1.7.10 facts: **only
+  `.ogg` decodes** (the loader hardcodes the extension — MP3 won't play), and an event listing
+  several files (`yank` → `yank1..3`) makes the engine pick one at **random** per play. **Client
+  sound must go through the `SoundHandler`:** `World.playSoundAtEntity` routes to
+  `RenderGlobal.playSound`, which is empty client-side, so `fire` is only audible because
+  `onItemRightClick` also runs server-side and the server broadcasts it. Purely client-side cues
+  (`yank`, `rope`) have no server leg, so they play via `mc.getSoundHandler().playSound(...)`
+  directly (`GrappleController.playLocalSound`) — local to the acting player, like the FoV punch.
 
 ## Conventions & gotchas
 
