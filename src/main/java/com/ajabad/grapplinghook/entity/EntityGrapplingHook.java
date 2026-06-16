@@ -5,6 +5,9 @@ import java.util.List;
 import com.ajabad.grapplinghook.Tuning;
 import com.ajabad.grapplinghook.item.ItemGrapplingHook;
 
+import cpw.mods.fml.common.registry.IEntityAdditionalSpawnData;
+import io.netty.buffer.ByteBuf;
+
 import net.minecraft.block.Block;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityLivingBase;
@@ -27,7 +30,7 @@ import net.minecraft.world.World;
  * (see {@code com.ajabad.grapplinghook.client.GrappleController}); this entity is
  * the shared, synced anchor those physics hang off of.
  */
-public class EntityGrapplingHook extends Entity
+public class EntityGrapplingHook extends Entity implements IEntityAdditionalSpawnData
 {
     public static final byte STATE_FLYING = 0;
     public static final byte STATE_STUCK = 1;
@@ -321,7 +324,7 @@ public class EntityGrapplingHook extends Entity
         this.motionY *= Tuning.AIR_DRAG;
         this.motionZ *= Tuning.AIR_DRAG;
         this.motionY -= Tuning.ARROW_GRAVITY;
-        updateRotationFromMotion();
+        updateFlightRotation();
         this.setPosition(this.posX, this.posY, this.posZ);
 
         if (!this.worldObj.isRemote)
@@ -605,6 +608,37 @@ public class EntityGrapplingHook extends Entity
         this.rotationPitch = (float) (Math.atan2(y, horiz) * 180.0D / Math.PI);
     }
 
+    /**
+     * Ease the rendered arrow toward its motion heading each flight tick, the way a
+     * vanilla arrow does ({@code EntityArrow.onUpdate}): unwrap the previous angle
+     * across the +/-180 seam so a heading that crosses it doesn't whip the model
+     * through a full turn during render interpolation, then lerp a fifth of the way.
+     * Replaces the old direct assignment, which snapped the model and, combined with
+     * the per-tick network correction, read as flight jitter.
+     */
+    private void updateFlightRotation()
+    {
+        float horiz = MathHelper.sqrt_double(this.motionX * this.motionX + this.motionZ * this.motionZ);
+        float yaw = (float) (Math.atan2(this.motionX, this.motionZ) * 180.0D / Math.PI);
+        float pitch = (float) (Math.atan2(this.motionY, horiz) * 180.0D / Math.PI);
+
+        // Freshly spawned, before prev is meaningful: aim straight at the heading.
+        if (this.prevRotationPitch == 0.0F && this.prevRotationYaw == 0.0F)
+        {
+            this.prevRotationYaw = this.rotationYaw = yaw;
+            this.prevRotationPitch = this.rotationPitch = pitch;
+            return;
+        }
+
+        while (pitch - this.prevRotationPitch < -180.0F) this.prevRotationPitch -= 360.0F;
+        while (pitch - this.prevRotationPitch >= 180.0F) this.prevRotationPitch += 360.0F;
+        while (yaw - this.prevRotationYaw < -180.0F) this.prevRotationYaw -= 360.0F;
+        while (yaw - this.prevRotationYaw >= 180.0F) this.prevRotationYaw += 360.0F;
+
+        this.rotationPitch = this.prevRotationPitch + (pitch - this.prevRotationPitch) * 0.2F;
+        this.rotationYaw = this.prevRotationYaw + (yaw - this.prevRotationYaw) * 0.2F;
+    }
+
     @Override
     protected void writeEntityToNBT(NBTTagCompound tag)
     {
@@ -618,6 +652,30 @@ public class EntityGrapplingHook extends Entity
         setState(tag.getByte("State"));
         this.ticksInAir = tag.getInteger("TicksInAir");
         // Owner id is not persisted; an unresolved owner makes the hook self-destruct.
+    }
+
+    /**
+     * Hand the client the exact launch velocity at spawn. The ordinary entity-spawn
+     * and velocity packets both clamp each component to +/-3.9 b/t, but the hook
+     * launches at {@link Tuning#LAUNCH_SPEED} (4.5), so those channels can't carry the
+     * true value. With the precise velocity, the client integrates the identical
+     * flight parabola the server does and needs no per-tick position correction --
+     * that correction (a quantized, lagged snap every tick) was the flight jitter.
+     */
+    @Override
+    public void writeSpawnData(ByteBuf buf)
+    {
+        buf.writeDouble(this.motionX);
+        buf.writeDouble(this.motionY);
+        buf.writeDouble(this.motionZ);
+    }
+
+    @Override
+    public void readSpawnData(ByteBuf buf)
+    {
+        this.motionX = buf.readDouble();
+        this.motionY = buf.readDouble();
+        this.motionZ = buf.readDouble();
     }
 
     @Override
